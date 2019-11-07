@@ -21,12 +21,14 @@ package org.apache.pinot.thirdeye.detection.spec;
 
 import org.apache.pinot.thirdeye.dataframe.util.MetricSlice;
 import org.apache.pinot.thirdeye.detection.Pattern;
+import org.apache.pinot.thirdeye.detection.ChangeType;
 
 
 public class MeanVarianceRuleDetectorSpec extends AbstractSpec {
   private String monitoringGranularity = MetricSlice.NATIVE_GRANULARITY.toAggregationGranularityString(); // use native granularity by default
   private int lookback = 52; //default look back of 52 units
   private double sensitivity = 5; //default sensitivity of 5, equals +/- 1 sigma
+  private ChangeType changeType = ChangeType.WEEK_OVER_WEEK_PCT;
   private Pattern pattern = Pattern.UP_OR_DOWN;
 
   public String getMonitoringGranularity() {
@@ -57,4 +59,7 @@ public class MeanVarianceRuleDetectorSpec extends AbstractSpec {
     this.sensitivity = sensitivity;
   }
 
+  public ChangeType getChangeType() { return changeType; }
+
+  public void setChangeType(ChangeType changeType) {this.changeType = changeType; }
 }
