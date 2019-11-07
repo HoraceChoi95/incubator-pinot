@@ -32,6 +32,7 @@ import org.apache.pinot.thirdeye.dataframe.LongSeries;
 import org.apache.pinot.thirdeye.dataframe.util.MetricSlice;
 import org.apache.pinot.thirdeye.datalayer.dto.DatasetConfigDTO;
 import org.apache.pinot.thirdeye.datalayer.dto.MergedAnomalyResultDTO;
+import org.apache.pinot.thirdeye.detection.ChangeType;
 import org.apache.pinot.thirdeye.detection.DetectionUtils;
 import org.apache.pinot.thirdeye.detection.InputDataFetcher;
 import org.apache.pinot.thirdeye.detection.Pattern;
@@ -70,6 +71,7 @@ public class MeanVarianceRuleDetector implements AnomalyDetector<MeanVarianceRul
   private Pattern pattern;
   private String monitoringGranularity;
   private TimeGranularity timeGranularity;
+  private ChangeType changeType;
   private double sensitivity;
   private int lookback;
 
@@ -86,6 +88,7 @@ public class MeanVarianceRuleDetector implements AnomalyDetector<MeanVarianceRul
     this.dataFetcher = dataFetcher;
     this.pattern = spec.getPattern();
     this.lookback = spec.getLookback();
+    this.changeType = spec.getChangeType();
     this.sensitivity = spec.getSensitivity();
     this.monitoringGranularity = spec.getMonitoringGranularity();
 
@@ -202,13 +205,26 @@ public class MeanVarianceRuleDetector implements AnomalyDetector<MeanVarianceRul
       DataFrame trainingDF;
       trainingDF = getLookbackDF(inputDF, forecastDF.getLong(COL_TIME, k));
       //the get historical WoW mean and std.
-      std[k]= trainingDF.getDoubles(COL_CHANGE).std().value();
-      mean[k] = trainingDF.getDoubles(COL_CHANGE).mean().value();
+      if (changeType.equals(ChangeType.ACTUAL)) {
+        std[k]= trainingDF.getDoubles(COL_VALUE).std().value();
+        mean[k] = trainingDF.getDoubles(COL_VALUE).mean().value();
+      } else {
+        std[k] = trainingDF.getDoubles(COL_CHANGE).std().value();
+        mean[k] = trainingDF.getDoubles(COL_CHANGE).mean().value();
+      }
 
       //calculate baseline, error , upper and lower bound for prediction window.
       resultTimeArray[k] = forecastDF.getLong(COL_TIME, k);
-      baselineArray[k] = trainingDF.getDouble(COL_VALUE,trainingDF.size()-1) * (1 + mean[k]);
-      errorArray[k] = trainingDF.getDouble(COL_VALUE,trainingDF.size()-1) * sensitivityToSigma(this.sensitivity) * std[k];
+      if (changeType.equals(ChangeType.WEEK_OVER_WEEK_PCT)) {
+        baselineArray[k] = trainingDF.getDouble(COL_VALUE, trainingDF.size() - 1) * (1 + mean[k]);
+        errorArray[k] = trainingDF.getDouble(COL_VALUE, trainingDF.size() - 1) * sensitivityToSigma(this.sensitivity) * std[k];
+      } else if (changeType.equals(ChangeType.WEEK_OVER_WEEK)){
+        baselineArray[k] = trainingDF.getDouble(COL_VALUE, trainingDF.size() - 1) + mean[k];
+        errorArray[k] = sensitivityToSigma(this.sensitivity) * std[k];
+      } else {
+        baselineArray[k] = mean[k];
+        errorArray[k] = sensitivityToSigma(this.sensitivity) * std[k];
+      }
       upperBoundArray[k] = baselineArray[k] + errorArray[k];
       lowerBoundArray[k] = baselineArray[k] - errorArray[k];
     }
@@ -254,15 +270,21 @@ public class MeanVarianceRuleDetector implements AnomalyDetector<MeanVarianceRul
       int indexStart = Math.max(0, indexEnd - lookback);
       df = df.append(originalDF.slice(indexStart, indexEnd));
     }
-    // calculate percentage change
-    df.addSeries(COL_CURR,df.getDoubles(COL_VALUE).shift(-1));
-    df.addSeries(COL_CHANGE, map((DoubleFunction) values -> {
-      if (Double.compare(values[1], 0.0) == 0) {
-        // divide by zero handling
-        return 0.0;
-      }
-      return (values[0] - values[1]) / values[1];
-    }, df.getDoubles(COL_CURR), df.get(COL_VALUE)));
+    if (changeType.equals(ChangeType.WEEK_OVER_WEEK)||changeType.equals(ChangeType.WEEK_OVER_WEEK_PCT)) {
+      // calculate percentage change
+      df.addSeries(COL_CURR, df.getDoubles(COL_VALUE).shift(-1));
+      df.addSeries(COL_CHANGE, map((DoubleFunction) values -> {
+        if (changeType.equals(ChangeType.WEEK_OVER_WEEK)) {
+          return (values[0] - values[1]);
+        } else {
+          if (Double.compare(values[1], 0.0) == 0) {
+            // divide by zero handling
+            return 0.0;
+          }
+          return (values[0] - values[1]) / values[1];
+        }
+      }, df.getDoubles(COL_CURR), df.get(COL_VALUE)));
+    }
     return df;
   }
 
