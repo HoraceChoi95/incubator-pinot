@@ -27,6 +27,7 @@ import java.util.Map;
 import javax.annotation.Nullable;
 import org.apache.commons.configuration.BaseConfiguration;
 import org.apache.commons.configuration.Configuration;
+import org.apache.helix.ConfigAccessor;
 import org.apache.helix.HelixAdmin;
 import org.apache.helix.HelixConstants.ChangeType;
 import org.apache.helix.HelixDataAccessor;
@@ -35,9 +36,12 @@ import org.apache.helix.HelixManagerFactory;
 import org.apache.helix.InstanceType;
 import org.apache.helix.SystemPropertyKeys;
 import org.apache.helix.ZNRecord;
+import org.apache.helix.model.ClusterConfig;
+import org.apache.helix.model.HelixConfigScope;
 import org.apache.helix.model.IdealState;
 import org.apache.helix.model.InstanceConfig;
 import org.apache.helix.model.Message;
+import org.apache.helix.model.builder.HelixConfigScopeBuilder;
 import org.apache.helix.participant.StateMachineEngine;
 import org.apache.helix.participant.statemachine.StateModelFactory;
 import org.apache.helix.store.zk.ZkHelixPropertyStore;
@@ -45,7 +49,6 @@ import org.apache.pinot.broker.broker.AccessControlFactory;
 import org.apache.pinot.broker.broker.BrokerServerBuilder;
 import org.apache.pinot.broker.queryquota.HelixExternalViewBasedQueryQuotaManager;
 import org.apache.pinot.broker.requesthandler.BrokerRequestHandler;
-import org.apache.pinot.broker.requesthandler.ConnectionPoolBrokerRequestHandler;
 import org.apache.pinot.broker.routing.HelixExternalViewBasedRouting;
 import org.apache.pinot.common.Utils;
 import org.apache.pinot.common.config.TagNameUtils;
@@ -83,7 +86,6 @@ public class HelixBrokerStarter {
   // Cluster change handlers
   private HelixExternalViewBasedRouting _helixExternalViewBasedRouting;
   private HelixExternalViewBasedQueryQuotaManager _helixExternalViewBasedQueryQuotaManager;
-  private LiveInstanceChangeHandler _liveInstanceChangeHandler;
   private ClusterChangeMediator _clusterChangeMediator;
 
   private BrokerServerBuilder _brokerServerBuilder;
@@ -108,9 +110,8 @@ public class HelixBrokerStarter {
     _zkServers = zkServer.replaceAll("\\s+", "");
 
     if (brokerHost == null) {
-      brokerHost =
-        _brokerConf.getBoolean(CommonConstants.Helix.SET_INSTANCE_ID_TO_HOSTNAME_KEY, false) ? NetUtil
-            .getHostnameOrAddress() : NetUtil.getHostAddress();
+      brokerHost = _brokerConf.getBoolean(CommonConstants.Helix.SET_INSTANCE_ID_TO_HOSTNAME_KEY, false) ? NetUtil
+          .getHostnameOrAddress() : NetUtil.getHostAddress();
     }
     _brokerId = _brokerConf.getString(Helix.Instance.INSTANCE_ID_KEY,
         Helix.PREFIX_OF_BROKER_INSTANCE + brokerHost + "_" + _brokerConf
@@ -166,6 +167,7 @@ public class HelixBrokerStarter {
     _helixAdmin = _spectatorHelixManager.getClusterManagmentTool();
     _propertyStore = _spectatorHelixManager.getHelixPropertyStore();
     _helixDataAccessor = _spectatorHelixManager.getHelixDataAccessor();
+    ConfigAccessor configAccessor = _spectatorHelixManager.getConfigAccessor();
 
     // Set up the broker server builder
     LOGGER.info("Setting up broker server builder");
@@ -174,14 +176,16 @@ public class HelixBrokerStarter {
     _helixExternalViewBasedRouting.init(_spectatorHelixManager);
     _helixExternalViewBasedQueryQuotaManager = new HelixExternalViewBasedQueryQuotaManager();
     _helixExternalViewBasedQueryQuotaManager.init(_spectatorHelixManager);
+
+    //should we enable case_insensitive_pql
+    HelixConfigScope helixConfigScope =
+        new HelixConfigScopeBuilder(HelixConfigScope.ConfigScopeProperty.CLUSTER).forCluster(_clusterName).build();
+    String enableCaseInsensitivePql = configAccessor.get(helixConfigScope, Helix.ENABLE_CASE_INSENSITIVE_PQL_KEY);
+    _brokerConf.setProperty(Helix.ENABLE_CASE_INSENSITIVE_PQL_KEY, Boolean.valueOf(enableCaseInsensitivePql));
+
     _brokerServerBuilder = new BrokerServerBuilder(_brokerConf, _helixExternalViewBasedRouting,
-        _helixExternalViewBasedRouting.getTimeBoundaryService(), _helixExternalViewBasedQueryQuotaManager);
+        _helixExternalViewBasedRouting.getTimeBoundaryService(), _helixExternalViewBasedQueryQuotaManager, _propertyStore);
     BrokerRequestHandler brokerRequestHandler = _brokerServerBuilder.getBrokerRequestHandler();
-    if (brokerRequestHandler instanceof ConnectionPoolBrokerRequestHandler) {
-      _liveInstanceChangeHandler = new LiveInstanceChangeHandler();
-      _liveInstanceChangeHandler.init(_spectatorHelixManager);
-      _liveInstanceChangeHandler.init(((ConnectionPoolBrokerRequestHandler) brokerRequestHandler).getConnPool());
-    }
     BrokerMetrics brokerMetrics = _brokerServerBuilder.getBrokerMetrics();
     _helixExternalViewBasedRouting.setBrokerMetrics(brokerMetrics);
     _helixExternalViewBasedQueryQuotaManager.setBrokerMetrics(brokerMetrics);
@@ -200,9 +204,6 @@ public class HelixBrokerStarter {
     _instanceConfigChangeHandlers.add(_helixExternalViewBasedRouting);
     for (ClusterChangeHandler liveInstanceChangeHandler : _liveInstanceChangeHandlers) {
       liveInstanceChangeHandler.init(_spectatorHelixManager);
-    }
-    if (_liveInstanceChangeHandler != null) {
-      _liveInstanceChangeHandlers.add(_liveInstanceChangeHandler);
     }
     Map<ChangeType, List<ClusterChangeHandler>> clusterChangeHandlersMap = new HashMap<>();
     clusterChangeHandlersMap.put(ChangeType.EXTERNAL_VIEW, _externalViewChangeHandlers);
@@ -251,7 +252,8 @@ public class HelixBrokerStarter {
    */
   private void registerServiceStatusHandler() {
     List<String> resourcesToMonitor = new ArrayList<>(1);
-    IdealState brokerResourceIdealState = _helixAdmin.getResourceIdealState(_clusterName, Helix.BROKER_RESOURCE_INSTANCE);
+    IdealState brokerResourceIdealState =
+        _helixAdmin.getResourceIdealState(_clusterName, Helix.BROKER_RESOURCE_INSTANCE);
     if (brokerResourceIdealState != null && brokerResourceIdealState.isEnabled()) {
       for (String partitionName : brokerResourceIdealState.getPartitionSet()) {
         if (brokerResourceIdealState.getInstanceSet(partitionName).contains(_brokerId)) {
@@ -265,11 +267,11 @@ public class HelixBrokerStarter {
         Broker.DEFAULT_BROKER_MIN_RESOURCE_PERCENT_FOR_START);
 
     LOGGER.info("Registering service status handler");
-    ServiceStatus.setServiceStatusCallback(new ServiceStatus.MultipleCallbackServiceStatusCallback(ImmutableList.of(
-        new ServiceStatus.IdealStateAndCurrentStateMatchServiceStatusCallback(_participantHelixManager, _clusterName,
-            _brokerId, resourcesToMonitor, minResourcePercentForStartup),
-        new ServiceStatus.IdealStateAndExternalViewMatchServiceStatusCallback(_participantHelixManager, _clusterName,
-            _brokerId, resourcesToMonitor, minResourcePercentForStartup))));
+    ServiceStatus.setServiceStatusCallback(new ServiceStatus.MultipleCallbackServiceStatusCallback(ImmutableList
+        .of(new ServiceStatus.IdealStateAndCurrentStateMatchServiceStatusCallback(_participantHelixManager,
+                _clusterName, _brokerId, resourcesToMonitor, minResourcePercentForStartup),
+            new ServiceStatus.IdealStateAndExternalViewMatchServiceStatusCallback(_participantHelixManager,
+                _clusterName, _brokerId, resourcesToMonitor, minResourcePercentForStartup))));
   }
 
   private void addInstanceTagIfNeeded() {
@@ -278,8 +280,7 @@ public class HelixBrokerStarter {
     List<String> instanceTags = instanceConfig.getTags();
     if (instanceTags == null || instanceTags.isEmpty()) {
       if (ZKMetadataProvider.getClusterTenantIsolationEnabled(_propertyStore)) {
-        _helixAdmin.addInstanceTag(_clusterName, _brokerId,
-            TagNameUtils.getBrokerTagForTenant(TagNameUtils.DEFAULT_TENANT_NAME));
+        _helixAdmin.addInstanceTag(_clusterName, _brokerId, TagNameUtils.getBrokerTagForTenant(null));
       } else {
         _helixAdmin.addInstanceTag(_clusterName, _brokerId, Helix.UNTAGGED_BROKER_INSTANCE);
       }

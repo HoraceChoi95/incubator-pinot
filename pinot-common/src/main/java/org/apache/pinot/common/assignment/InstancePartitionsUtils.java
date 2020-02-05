@@ -28,10 +28,10 @@ import org.apache.helix.HelixManager;
 import org.apache.helix.ZNRecord;
 import org.apache.helix.store.HelixPropertyStore;
 import org.apache.helix.store.zk.ZkHelixPropertyStore;
-import org.apache.pinot.common.config.OfflineTagConfig;
-import org.apache.pinot.common.config.RealtimeTagConfig;
 import org.apache.pinot.common.config.TableConfig;
 import org.apache.pinot.common.config.TableNameBuilder;
+import org.apache.pinot.common.config.TagNameUtils;
+import org.apache.pinot.common.config.TenantConfig;
 import org.apache.pinot.common.metadata.ZKMetadataProvider;
 import org.apache.pinot.common.utils.helix.HelixHelper;
 
@@ -52,27 +52,18 @@ public class InstancePartitionsUtils {
   }
 
   /**
-   * Fetches the instance partitions from Helix property store if exists, or computes it for backward-compatibility.
+   * Fetches the instance partitions from Helix property store if it exists, or computes it for backward-compatibility.
    */
   public static InstancePartitions fetchOrComputeInstancePartitions(HelixManager helixManager, TableConfig tableConfig,
       InstancePartitionsType instancePartitionsType) {
     String tableNameWithType = tableConfig.getTableName();
 
-    // Fetch the instance partitions from property store if exists
+    // Fetch the instance partitions from property store if it exists
     ZkHelixPropertyStore<ZNRecord> propertyStore = helixManager.getHelixPropertyStore();
     InstancePartitions instancePartitions =
         fetchInstancePartitions(propertyStore, getInstancePartitionsName(tableNameWithType, instancePartitionsType));
     if (instancePartitions != null) {
       return instancePartitions;
-    }
-
-    // Use the CONSUMING instance partitions for COMPLETED segments if exists
-    if (instancePartitionsType == InstancePartitionsType.COMPLETED) {
-      InstancePartitions consumingInstancePartitions = fetchInstancePartitions(propertyStore,
-          getInstancePartitionsName(tableNameWithType, InstancePartitionsType.CONSUMING));
-      if (consumingInstancePartitions != null) {
-        return consumingInstancePartitions;
-      }
     }
 
     // Compute the default instance partitions (for backward-compatibility)
@@ -98,16 +89,17 @@ public class InstancePartitionsUtils {
    */
   public static InstancePartitions computeDefaultInstancePartitions(HelixManager helixManager, TableConfig tableConfig,
       InstancePartitionsType instancePartitionsType) {
+    TenantConfig tenantConfig = tableConfig.getTenantConfig();
     String serverTag;
     switch (instancePartitionsType) {
       case OFFLINE:
-        serverTag = new OfflineTagConfig(tableConfig).getOfflineServerTag();
+        serverTag = TagNameUtils.extractOfflineServerTag(tenantConfig);
         break;
       case CONSUMING:
-        serverTag = new RealtimeTagConfig(tableConfig).getConsumingServerTag();
+        serverTag = TagNameUtils.extractConsumingServerTag(tenantConfig);
         break;
       case COMPLETED:
-        serverTag = new RealtimeTagConfig(tableConfig).getCompletedServerTag();
+        serverTag = TagNameUtils.extractCompletedServerTag(tenantConfig);
         break;
       default:
         throw new IllegalStateException();

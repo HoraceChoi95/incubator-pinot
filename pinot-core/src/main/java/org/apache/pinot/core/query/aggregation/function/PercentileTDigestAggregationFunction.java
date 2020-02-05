@@ -19,7 +19,7 @@
 package org.apache.pinot.core.query.aggregation.function;
 
 import com.tdunning.math.stats.TDigest;
-import org.apache.pinot.common.data.FieldSpec.DataType;
+import org.apache.pinot.spi.data.FieldSpec.DataType;
 import org.apache.pinot.common.function.AggregationFunctionType;
 import org.apache.pinot.common.utils.DataSchema.ColumnDataType;
 import org.apache.pinot.core.common.BlockValSet;
@@ -50,6 +50,11 @@ public class PercentileTDigestAggregationFunction implements AggregationFunction
   @Override
   public String getColumnName(String column) {
     return AggregationFunctionType.PERCENTILETDIGEST.getName() + _percentile + "_" + column;
+  }
+
+  @Override
+  public String getResultColumnName(String column) {
+    return AggregationFunctionType.PERCENTILETDIGEST.getName().toLowerCase() + _percentile + "(" + column + ")";
   }
 
   @Override
@@ -186,6 +191,11 @@ public class PercentileTDigestAggregationFunction implements AggregationFunction
   @Override
   public ColumnDataType getIntermediateResultColumnType() {
     return ColumnDataType.OBJECT;
+  }
+
+  @Override
+  public ColumnDataType getFinalResultColumnType() {
+    return ColumnDataType.DOUBLE;
   }
 
   @Override

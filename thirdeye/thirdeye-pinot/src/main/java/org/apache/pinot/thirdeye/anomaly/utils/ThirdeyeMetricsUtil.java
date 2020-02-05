@@ -110,6 +110,15 @@ public class ThirdeyeMetricsUtil {
   public static final Counter datasourceExceptionCounter =
       metricsRegistry.newCounter(ThirdeyeMetricsUtil.class, "datasourceExceptionCounter");
 
+  public static final Counter couchbaseCallCounter =
+      metricsRegistry.newCounter(ThirdeyeMetricsUtil.class, "couchbaseCallCounter");
+
+  public static final Counter couchbaseWriteCounter =
+      metricsRegistry.newCounter(ThirdeyeMetricsUtil.class, "couchbaseWriteCounter");
+
+  public static final Counter couchbaseExceptionCounter =
+      metricsRegistry.newCounter(ThirdeyeMetricsUtil.class, "couchbaseExceptionCounter");
+
   public static final Counter pinotCallCounter =
       metricsRegistry.newCounter(ThirdeyeMetricsUtil.class, "pinotCallCounter");
 
@@ -154,6 +163,12 @@ public class ThirdeyeMetricsUtil {
 
   public static final Counter processedTriggerEventCounter =
       metricsRegistry.newCounter(ThirdeyeMetricsUtil.class, "processedTriggerEventCounter");
+
+  public static final Counter eventScheduledTaskCounter =
+      metricsRegistry.newCounter(ThirdeyeMetricsUtil.class, "eventScheduledTaskCounter");
+
+  public static final Counter eventScheduledTaskFallbackCounter =
+      metricsRegistry.newCounter(ThirdeyeMetricsUtil.class, "eventScheduledTaskFallbackCounter");
 
   public static MetricsRegistry getMetricsRegistry() {
     return metricsRegistry;

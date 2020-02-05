@@ -36,11 +36,9 @@ import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
-import javax.validation.constraints.NotNull;
 import javax.ws.rs.DefaultValue;
 import javax.ws.rs.GET;
 import javax.ws.rs.POST;
-import javax.ws.rs.PUT;
 import javax.ws.rs.Path;
 import javax.ws.rs.PathParam;
 import javax.ws.rs.Produces;
@@ -74,13 +72,15 @@ import org.apache.pinot.thirdeye.datasource.loader.AggregationLoader;
 import org.apache.pinot.thirdeye.datasource.loader.DefaultAggregationLoader;
 import org.apache.pinot.thirdeye.datasource.loader.DefaultTimeSeriesLoader;
 import org.apache.pinot.thirdeye.datasource.loader.TimeSeriesLoader;
+import org.apache.pinot.thirdeye.detection.cache.builder.AnomaliesCacheBuilder;
+import org.apache.pinot.thirdeye.detection.cache.builder.TimeSeriesCacheBuilder;
 import org.apache.pinot.thirdeye.detection.finetune.GridSearchTuningAlgorithm;
 import org.apache.pinot.thirdeye.detection.finetune.TuningAlgorithm;
-import org.apache.pinot.thirdeye.formatter.DetectionAlertConfigFormatter;
-import org.apache.pinot.thirdeye.formatter.DetectionConfigFormatter;
 import org.apache.pinot.thirdeye.detection.health.DetectionHealth;
 import org.apache.pinot.thirdeye.detection.spi.model.AnomalySlice;
 import org.apache.pinot.thirdeye.detector.function.BaseAnomalyFunction;
+import org.apache.pinot.thirdeye.formatter.DetectionAlertConfigFormatter;
+import org.apache.pinot.thirdeye.formatter.DetectionConfigFormatter;
 import org.apache.pinot.thirdeye.rootcause.impl.MetricEntity;
 import org.apache.pinot.thirdeye.util.AnomalyOffset;
 import org.joda.time.DateTime;
@@ -127,7 +127,7 @@ public class DetectionResource {
     this.taskDAO = DAORegistry.getInstance().getTaskDAO();
 
     TimeSeriesLoader timeseriesLoader =
-        new DefaultTimeSeriesLoader(metricDAO, datasetDAO, ThirdEyeCacheRegistry.getInstance().getQueryCache());
+        new DefaultTimeSeriesLoader(metricDAO, datasetDAO, ThirdEyeCacheRegistry.getInstance().getQueryCache(), ThirdEyeCacheRegistry.getInstance().getTimeSeriesCache());
 
     AggregationLoader aggregationLoader =
         new DefaultAggregationLoader(metricDAO, datasetDAO, ThirdEyeCacheRegistry.getInstance().getQueryCache(),
@@ -135,7 +135,9 @@ public class DetectionResource {
 
     this.loader = new DetectionPipelineLoader();
 
-    this.provider = new DefaultDataProvider(metricDAO, datasetDAO, eventDAO, anomalyDAO, evaluationDAO, timeseriesLoader, aggregationLoader, loader);
+    this.provider = new DefaultDataProvider(metricDAO, datasetDAO, eventDAO, anomalyDAO, evaluationDAO,
+        timeseriesLoader, aggregationLoader, loader, TimeSeriesCacheBuilder.getInstance(),
+        AnomaliesCacheBuilder.getInstance());
     this.detectionConfigFormatter = new DetectionConfigFormatter(metricDAO, datasetDAO);
     this.subscriptionConfigFormatter = new DetectionAlertConfigFormatter();
   }
@@ -250,7 +252,7 @@ public class DetectionResource {
 
     LinkedHashMap<String, List<Number>> parameters = (LinkedHashMap<String, List<Number>>) json.get("parameters");
 
-    AnomalySlice slice = new AnomalySlice().withStart(start).withEnd(end);
+    AnomalySlice slice = new AnomalySlice().withDetectionId(configId).withStart(start).withEnd(end);
 
     TuningAlgorithm gridSearch = new GridSearchTuningAlgorithm(OBJECT_MAPPER.writeValueAsString(json.get("properties")), parameters);
     gridSearch.fit(slice, configId);
@@ -387,11 +389,11 @@ public class DetectionResource {
         throw new IllegalArgumentException(String.format("Cannot find config %d", configId));
       }
 
-      AnomalySlice slice = new AnomalySlice().withStart(start).withEnd(end);
+      AnomalySlice slice = new AnomalySlice().withDetectionId(configId).withStart(start).withEnd(end);
       if (deleteExistingAnomaly) {
         // clear existing anomalies
         Collection<MergedAnomalyResultDTO> existing =
-            this.provider.fetchAnomalies(Collections.singleton(slice), configId).get(slice);
+            this.provider.fetchAnomalies(Collections.singleton(slice)).get(slice);
 
         List<Long> existingIds = new ArrayList<>();
         for (MergedAnomalyResultDTO anomaly : existing) {
@@ -418,7 +420,8 @@ public class DetectionResource {
         }
       }
 
-      replayResult = this.provider.fetchAnomalies(Collections.singleton(slice), configId).get(slice);
+      slice = slice.withDetectionId(configId);
+      replayResult = this.provider.fetchAnomalies(Collections.singleton(slice)).get(slice);
 
     } catch (Exception e) {
       LOG.error("Error running replay on detection id " + configId, e);
@@ -447,6 +450,7 @@ public class DetectionResource {
       @QueryParam("end") long end,
       @QueryParam("deleteExistingAnomaly") @DefaultValue("false") boolean deleteExistingAnomaly) throws Exception {
     Map<String, String> responseMessage = new HashMap<>();
+    long ts = System.currentTimeMillis();
     DetectionPipelineResult result;
     try {
       DetectionConfigDTO config = this.configDAO.findById(detectionId);
@@ -455,9 +459,9 @@ public class DetectionResource {
       }
 
       if (deleteExistingAnomaly) {
-        AnomalySlice slice = new AnomalySlice().withStart(start).withEnd(end);
+        AnomalySlice slice = new AnomalySlice().withDetectionId(detectionId).withStart(start).withEnd(end);
         Collection<MergedAnomalyResultDTO> existing =
-            this.provider.fetchAnomalies(Collections.singleton(slice), detectionId).get(slice);
+            this.provider.fetchAnomalies(Collections.singleton(slice)).get(slice);
 
         List<Long> existingIds = new ArrayList<>();
         for (MergedAnomalyResultDTO anomaly : existing) {
@@ -487,7 +491,9 @@ public class DetectionResource {
       return Response.serverError().entity(responseMessage).build();
     }
 
-    LOG.info("Replay detection pipeline {} generated {} anomalies.", detectionId, result.getAnomalies().size());
+    long duration = System.currentTimeMillis() - ts;
+    LOG.info("Replay detection pipeline {} generated {} anomalies and took {} millis.",
+        detectionId, result.getAnomalies().size(), duration);
     return Response.ok(result).build();
   }
 
@@ -540,40 +546,6 @@ public class DetectionResource {
     this.anomalyDAO.save(anomaly);
 
     return Response.ok(anomaly.getId()).build();
-  }
-
-  /**
-   * Toggle active/inactive for given detection
-   *
-   * @param detectionId detection config id (must exist)
-   * @param active value to set for active field in detection config
-   */
-  @PUT
-  @Path("/activation/{id}")
-  @ApiOperation("Make detection active or inactive, given id")
-  public Response toggleActivation(
-      @ApiParam("Detection configuration id for the alert") @NotNull @PathParam("id") long detectionId,
-      @ApiParam("Active status you want to set for the alert") @NotNull @QueryParam("active") boolean active) throws Exception {
-    Map<String, String> responseMessage = new HashMap<>();
-    try {
-      DetectionConfigDTO config = this.configDAO.findById(detectionId);
-      if (config == null) {
-        throw new IllegalArgumentException(String.format("Cannot find config %d", detectionId));
-      }
-
-      // update state
-      config.setActive(active);
-      this.configDAO.update(config);
-      responseMessage.put("message", "Alert activation toggled to " + active + " for detection id " + detectionId);
-    }
-    catch (Exception e) {
-      LOG.error("Error toggling activation on detection id " + detectionId, e);
-      responseMessage.put("message", "Failed to toggle activation: " + e.getMessage());
-      return Response.serverError().entity(responseMessage).build();
-    }
-
-    LOG.info("Alert activation toggled to {} for detection id {}", active , detectionId);
-    return Response.ok(responseMessage).build();
   }
 
   @GET

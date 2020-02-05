@@ -18,96 +18,67 @@
  */
 package org.apache.pinot.common.config.instance;
 
-import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
+import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonProperty;
-import org.apache.pinot.common.config.ConfigDoc;
-import org.apache.pinot.common.config.ConfigKey;
+import com.fasterxml.jackson.annotation.JsonPropertyDescription;
+import org.apache.pinot.common.config.BaseJsonConfig;
 
 
-@JsonIgnoreProperties(ignoreUnknown = true)
-public class InstanceReplicaGroupPartitionConfig {
+public class InstanceReplicaGroupPartitionConfig extends BaseJsonConfig {
 
-  @ConfigKey("replicaGroupBased")
-  @ConfigDoc("Whether to use replica-group based selection, false by default")
-  private boolean _replicaGroupBased;
+  @JsonPropertyDescription("Whether to use replica-group based selection, false by default")
+  private final boolean _replicaGroupBased;
 
-  @ConfigKey("numServers")
-  @ConfigDoc("Number of instances to select for non-replica-group based selection, select all instances if not specified")
-  private int _numInstances;
+  @JsonPropertyDescription("Number of instances to select for non-replica-group based selection, select all instances if not specified")
+  private final int _numInstances;
 
-  @ConfigKey("numReplicaGroups")
-  @ConfigDoc("Number of replica-groups for replica-group based selection")
-  private int _numReplicaGroups;
+  @JsonPropertyDescription("Number of replica-groups for replica-group based selection")
+  private final int _numReplicaGroups;
 
-  @ConfigKey("numServersPerReplicaGroup")
-  @ConfigDoc("Number of instances per replica-group for replica-group based selection, select as many instances as possible if not specified")
-  private int _numInstancesPerReplicaGroup;
+  @JsonPropertyDescription("Number of instances per replica-group for replica-group based selection, select as many instances as possible if not specified")
+  private final int _numInstancesPerReplicaGroup;
 
-  @ConfigKey("numPartitions")
-  @ConfigDoc("Number of partitions for replica-group based selection, do not partition the replica-group (1 partition) if not specified")
-  private int _numPartitions;
+  @JsonPropertyDescription("Number of partitions for replica-group based selection, do not partition the replica-group (1 partition) if not specified")
+  private final int _numPartitions;
 
-  @ConfigKey("numServersPerPartition")
-  @ConfigDoc("Number of instances per partition (within a replica-group) for replica-group based selection, select all instances if not specified")
-  private int _numInstancesPerPartition;
+  @JsonPropertyDescription("Number of instances per partition (within a replica-group) for replica-group based selection, select all instances if not specified")
+  private final int _numInstancesPerPartition;
 
-  @JsonProperty
+  @JsonCreator
+  public InstanceReplicaGroupPartitionConfig(@JsonProperty("replicaGroupBased") boolean replicaGroupBased,
+      @JsonProperty("numInstances") int numInstances, @JsonProperty("numReplicaGroups") int numReplicaGroups,
+      @JsonProperty("numInstancesPerReplicaGroup") int numInstancesPerReplicaGroup,
+      @JsonProperty("numPartitions") int numPartitions,
+      @JsonProperty("numInstancesPerPartition") int numInstancesPerPartition) {
+    _replicaGroupBased = replicaGroupBased;
+    _numInstances = numInstances;
+    _numReplicaGroups = numReplicaGroups;
+    _numInstancesPerReplicaGroup = numInstancesPerReplicaGroup;
+    _numPartitions = numPartitions;
+    _numInstancesPerPartition = numInstancesPerPartition;
+  }
+
   public boolean isReplicaGroupBased() {
     return _replicaGroupBased;
   }
 
-  @JsonProperty
-  public void setReplicaGroupBased(boolean replicaGroupBased) {
-    _replicaGroupBased = replicaGroupBased;
-  }
-
-  @JsonProperty
   public int getNumInstances() {
     return _numInstances;
   }
 
-  @JsonProperty
-  public void setNumInstances(int numInstances) {
-    _numInstances = numInstances;
-  }
-
-  @JsonProperty
   public int getNumReplicaGroups() {
     return _numReplicaGroups;
   }
 
-  @JsonProperty
-  public void setNumReplicaGroups(int numReplicaGroups) {
-    _numReplicaGroups = numReplicaGroups;
-  }
-
-  @JsonProperty
   public int getNumInstancesPerReplicaGroup() {
     return _numInstancesPerReplicaGroup;
   }
 
-  @JsonProperty
-  public void setNumInstancesPerReplicaGroup(int numInstancesPerReplicaGroup) {
-    _numInstancesPerReplicaGroup = numInstancesPerReplicaGroup;
-  }
-
-  @JsonProperty
   public int getNumPartitions() {
     return _numPartitions;
   }
 
-  @JsonProperty
-  public void setNumPartitions(int numPartitions) {
-    _numPartitions = numPartitions;
-  }
-
-  @JsonProperty
   public int getNumInstancesPerPartition() {
     return _numInstancesPerPartition;
-  }
-
-  @JsonProperty
-  public void setNumInstancesPerPartition(int numInstancesPerPartition) {
-    _numInstancesPerPartition = numInstancesPerPartition;
   }
 }

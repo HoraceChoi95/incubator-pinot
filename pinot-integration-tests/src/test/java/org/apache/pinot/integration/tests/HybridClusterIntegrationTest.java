@@ -29,11 +29,11 @@ import java.util.concurrent.TimeUnit;
 import javax.annotation.Nullable;
 import org.apache.commons.io.FileUtils;
 import org.apache.pinot.common.config.TableNameBuilder;
-import org.apache.pinot.common.data.Schema;
+import org.apache.pinot.spi.data.Schema;
 import org.apache.pinot.common.utils.CommonConstants;
-import org.apache.pinot.common.utils.JsonUtils;
+import org.apache.pinot.spi.utils.JsonUtils;
 import org.apache.pinot.controller.ControllerConf;
-import org.apache.pinot.core.realtime.impl.kafka.KafkaStarterUtils;
+import org.apache.pinot.tools.utils.KafkaStarterUtils;
 import org.apache.pinot.util.TestUtils;
 import org.testng.Assert;
 import org.testng.annotations.AfterClass;
@@ -136,8 +136,6 @@ public class HybridClusterIntegrationTest extends BaseClusterIntegrationTestSet 
         getKafkaTopic(), getRealtimeSegmentFlushSize(), avroFile, timeColumnName, timeType, schemaName, TENANT_NAME,
         TENANT_NAME, getLoadMode(), getSortedColumn(), getInvertedIndexColumns(), getBloomFilterIndexColumns(),
         getRawIndexColumns(), getTaskConfig(), getStreamConsumerFactoryClassName(), getSegmentPartitionConfig());
-
-    completeTableConfiguration();
   }
 
   protected List<File> getAllAvroFiles()
@@ -237,13 +235,6 @@ public class HybridClusterIntegrationTest extends BaseClusterIntegrationTestSet 
 
   @Test
   @Override
-  public void testSqlQueriesFromQueryFile()
-      throws Exception {
-    super.testQueriesFromQueryFile();
-  }
-
-  @Test
-  @Override
   public void testGeneratedQueriesWithMultiValues()
       throws Exception {
     super.testGeneratedQueriesWithMultiValues();
@@ -314,10 +305,5 @@ public class HybridClusterIntegrationTest extends BaseClusterIntegrationTestSet 
   protected void cleanup()
       throws Exception {
     FileUtils.deleteDirectory(_tempDir);
-  }
-
-  @Override
-  protected boolean isUsingNewConfigFormat() {
-    return true;
   }
 }

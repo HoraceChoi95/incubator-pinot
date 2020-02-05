@@ -18,7 +18,6 @@
  */
 package org.apache.pinot.controller.helix;
 
-import com.fasterxml.jackson.core.JsonProcessingException;
 import com.google.common.base.Preconditions;
 import java.io.BufferedReader;
 import java.io.BufferedWriter;
@@ -62,11 +61,11 @@ import org.apache.helix.participant.statemachine.Transition;
 import org.apache.helix.store.zk.ZkHelixPropertyStore;
 import org.apache.pinot.common.config.TagNameUtils;
 import org.apache.pinot.common.config.Tenant;
-import org.apache.pinot.common.data.DimensionFieldSpec;
-import org.apache.pinot.common.data.FieldSpec;
-import org.apache.pinot.common.data.MetricFieldSpec;
-import org.apache.pinot.common.data.Schema;
-import org.apache.pinot.common.utils.JsonUtils;
+import org.apache.pinot.common.utils.CommonConstants;
+import org.apache.pinot.spi.data.DimensionFieldSpec;
+import org.apache.pinot.spi.data.FieldSpec;
+import org.apache.pinot.spi.data.MetricFieldSpec;
+import org.apache.pinot.spi.data.Schema;
 import org.apache.pinot.common.utils.TenantRole;
 import org.apache.pinot.common.utils.ZkStarter;
 import org.apache.pinot.controller.ControllerConf;
@@ -159,8 +158,11 @@ public abstract class ControllerTest {
     _helixResourceManager = _controllerStarter.getHelixResourceManager();
     _helixManager = _controllerStarter.getHelixControllerManager();
     _helixDataAccessor = _helixManager.getHelixDataAccessor();
-
+    ConfigAccessor configAccessor = _helixManager.getConfigAccessor();
     // HelixResourceManager is null in Helix only mode, while HelixManager is null in Pinot only mode.
+    HelixConfigScope scope =
+        new HelixConfigScopeBuilder(HelixConfigScope.ConfigScopeProperty.CLUSTER).forCluster(getHelixClusterName())
+            .build();
     switch (_controllerStarter.getControllerMode()) {
       case DUAL:
       case PINOT_ONLY:
@@ -169,16 +171,15 @@ public abstract class ControllerTest {
 
         // TODO: Enable periodic rebalance per 10 seconds as a temporary work-around for the Helix issue:
         //       https://github.com/apache/helix/issues/331. Remove this after Helix fixing the issue.
-        _helixAdmin.setConfig(
-            new HelixConfigScopeBuilder(HelixConfigScope.ConfigScopeProperty.CLUSTER).forCluster(getHelixClusterName())
-                .build(),
-            Collections.singletonMap(ClusterConfig.ClusterConfigProperty.REBALANCE_TIMER_PERIOD.name(), "10000"));
+        configAccessor.set(scope, ClusterConfig.ClusterConfigProperty.REBALANCE_TIMER_PERIOD.name(), "10000");
         break;
       case HELIX_ONLY:
         _helixAdmin = _helixManager.getClusterManagmentTool();
         _propertyStore = _helixManager.getHelixPropertyStore();
         break;
     }
+    //enable case insensitive pql for test cases.
+    configAccessor.set(scope, CommonConstants.Helix.ENABLE_CASE_INSENSITIVE_PQL_KEY, Boolean.TRUE.toString());
   }
 
   protected ControllerStarter getControllerStarter(ControllerConf config) {
@@ -409,11 +410,8 @@ public abstract class ControllerTest {
     Assert.assertEquals(postMethod.getStatusCode(), 200);
   }
 
-  protected String getBrokerTenantRequestPayload(String tenantName, int numBrokers)
-      throws JsonProcessingException {
-    Tenant tenant =
-        new Tenant.TenantBuilder(tenantName).setRole(TenantRole.BROKER).setTotalInstances(numBrokers).build();
-    return JsonUtils.objectToString(tenant);
+  protected String getBrokerTenantRequestPayload(String tenantName, int numBrokers) {
+    return new Tenant(TenantRole.BROKER, tenantName, numBrokers, 0, 0).toJsonString();
   }
 
   protected void createBrokerTenant(String tenantName, int numBrokers)
@@ -428,12 +426,9 @@ public abstract class ControllerTest {
         getBrokerTenantRequestPayload(tenantName, numBrokers));
   }
 
-  protected String getServerTenantRequestPayload(String tenantName, int numOfflineServers, int numRealtimeServers)
-      throws JsonProcessingException {
-    Tenant tenant = new Tenant.TenantBuilder(tenantName).setRole(TenantRole.SERVER)
-        .setTotalInstances(numOfflineServers + numRealtimeServers).setOfflineInstances(numOfflineServers)
-        .setRealtimeInstances(numRealtimeServers).build();
-    return JsonUtils.objectToString(tenant);
+  protected String getServerTenantRequestPayload(String tenantName, int numOfflineServers, int numRealtimeServers) {
+    return new Tenant(TenantRole.SERVER, tenantName, numOfflineServers + numRealtimeServers, numOfflineServers,
+        numRealtimeServers).toJsonString();
   }
 
   protected void createServerTenant(String tenantName, int numOfflineServers, int numRealtimeServers)

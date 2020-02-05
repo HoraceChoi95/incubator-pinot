@@ -295,7 +295,10 @@ StreamType of ``kafka`` is supported natively in Pinot.
 You can use default decoder classes and consumer factory classes.
 Pinot allows you to use other stream types with their own consumer factory
 and decoder classes (or, even other decoder and consumer factory for ``kafka`` if
-your installation formats kafka messages differently). See :ref:`pluggable-streams`.
+your installation formats kafka messages differently).
+
+If you are considering adding support for streams other than Kafka,
+please see section :ref:`pluggable-streams`.
 
 There are some configurations that are generic to all stream types, and others that
 are specific to stream types.
@@ -374,7 +377,7 @@ Important ones to note here are:
    If you specify ``smallest`` then the consumption starts from the earliest event avaiable in the
    data stream.
 
-All the confifurations that are prefixed with the streamtype are expected to be used by the underlying
+All the configurations that are prefixed with the streamtype are expected to be used by the underlying
 stream. So, you can set any of the configurations described in the
 `Kafka configuraton page <https://kafka.apache.org/documentation/#consumerconfigs>`_ can be set using
 the prefix ``stream.kafka`` and Kafka should pay attention to it.

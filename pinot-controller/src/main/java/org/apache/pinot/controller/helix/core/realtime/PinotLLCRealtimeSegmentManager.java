@@ -60,7 +60,7 @@ import org.apache.pinot.common.utils.LLCSegmentName;
 import org.apache.pinot.common.utils.SegmentName;
 import org.apache.pinot.common.utils.URIUtils;
 import org.apache.pinot.common.utils.helix.HelixHelper;
-import org.apache.pinot.common.utils.retry.RetryPolicies;
+import org.apache.pinot.spi.utils.retry.RetryPolicies;
 import org.apache.pinot.controller.ControllerConf;
 import org.apache.pinot.controller.api.events.MetadataEventNotifierFactory;
 import org.apache.pinot.controller.helix.core.PinotHelixResourceManager;
@@ -72,14 +72,14 @@ import org.apache.pinot.controller.helix.core.realtime.segment.CommittingSegment
 import org.apache.pinot.controller.helix.core.realtime.segment.FlushThresholdUpdateManager;
 import org.apache.pinot.controller.helix.core.realtime.segment.FlushThresholdUpdater;
 import org.apache.pinot.controller.util.SegmentCompletionUtils;
-import org.apache.pinot.core.realtime.stream.OffsetCriteria;
-import org.apache.pinot.core.realtime.stream.PartitionLevelStreamConfig;
-import org.apache.pinot.core.realtime.stream.PartitionOffsetFetcher;
-import org.apache.pinot.core.realtime.stream.StreamConfig;
-import org.apache.pinot.core.realtime.stream.StreamConfigProperties;
+import org.apache.pinot.spi.stream.OffsetCriteria;
+import org.apache.pinot.spi.stream.PartitionLevelStreamConfig;
+import org.apache.pinot.spi.stream.PartitionOffsetFetcher;
+import org.apache.pinot.spi.stream.StreamConfig;
+import org.apache.pinot.spi.stream.StreamConfigProperties;
 import org.apache.pinot.core.segment.index.SegmentMetadataImpl;
-import org.apache.pinot.filesystem.PinotFS;
-import org.apache.pinot.filesystem.PinotFSFactory;
+import org.apache.pinot.spi.filesystem.PinotFS;
+import org.apache.pinot.spi.filesystem.PinotFSFactory;
 import org.apache.zookeeper.data.Stat;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -206,7 +206,8 @@ public class PinotLLCRealtimeSegmentManager {
 
     _flushThresholdUpdateManager.clearFlushThresholdUpdater(realtimeTableName);
 
-    PartitionLevelStreamConfig streamConfig = new PartitionLevelStreamConfig(tableConfig);
+    PartitionLevelStreamConfig streamConfig =
+        new PartitionLevelStreamConfig(tableConfig.getTableName(), tableConfig.getIndexingConfig().getStreamConfigs());
     InstancePartitions instancePartitions = getConsumingInstancePartitions(tableConfig);
     int numPartitions = getNumPartitions(streamConfig);
     int numReplicas = getNumReplicas(tableConfig, instancePartitions);
@@ -432,9 +433,10 @@ public class PinotLLCRealtimeSegmentManager {
     long newSegmentCreationTimeMs = getCurrentTimeMs();
     LLCSegmentName newLLCSegmentName =
         getNextLLCSegmentName(new LLCSegmentName(committingSegmentName), newSegmentCreationTimeMs);
-    createNewSegmentZKMetadata(tableConfig, new PartitionLevelStreamConfig(tableConfig), newLLCSegmentName,
-        newSegmentCreationTimeMs, committingSegmentDescriptor, committingSegmentZKMetadata, instancePartitions,
-        numPartitions, numReplicas);
+    createNewSegmentZKMetadata(tableConfig,
+        new PartitionLevelStreamConfig(tableConfig.getTableName(), tableConfig.getIndexingConfig().getStreamConfigs()),
+        newLLCSegmentName, newSegmentCreationTimeMs, committingSegmentDescriptor, committingSegmentZKMetadata,
+        instancePartitions, numPartitions, numReplicas);
 
     // Step-3
     SegmentAssignment segmentAssignment = SegmentAssignmentFactory.getSegmentAssignment(_helixManager, tableConfig);

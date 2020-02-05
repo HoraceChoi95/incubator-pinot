@@ -34,7 +34,21 @@ public class InstanceAssignmentConfigUtils {
   }
 
   /**
-   * Returns whether the instance assignment is allowed for the given table config.
+   * Returns whether the COMPLETED segments should be relocated (offloaded from CONSUMING instances to COMPLETED
+   * instances) for a LLC real-time table based on the given table config.
+   * <p>COMPLETED segments should be relocated iff the COMPLETED instance assignment is configured or (for
+   * backward-compatibility) COMPLETED server tag is overridden to be different from the CONSUMING server tag.
+   */
+  public static boolean shouldRelocateCompletedSegments(TableConfig tableConfig) {
+    Map<InstancePartitionsType, InstanceAssignmentConfig> instanceAssignmentConfigMap =
+        tableConfig.getInstanceAssignmentConfigMap();
+    return (instanceAssignmentConfigMap != null
+        && instanceAssignmentConfigMap.get(InstancePartitionsType.COMPLETED) != null) || TagNameUtils
+        .isRelocateCompletedSegments(tableConfig.getTenantConfig());
+  }
+
+  /**
+   * Returns whether the instance assignment is allowed for the given table config and instance partitions type.
    */
   public static boolean allowInstanceAssignment(TableConfig tableConfig,
       InstancePartitionsType instancePartitionsType) {
@@ -45,15 +59,15 @@ public class InstanceAssignmentConfigUtils {
       // Allow OFFLINE instance assignment if the offline table has it configured or (for backward-compatibility) is
       // using replica-group segment assignment
       case OFFLINE:
-        return tableType == TableType.OFFLINE && ((instanceAssignmentConfigMap != null && instanceAssignmentConfigMap
-            .containsKey(InstancePartitionsType.OFFLINE))
+        return tableType == TableType.OFFLINE && ((instanceAssignmentConfigMap != null
+            && instanceAssignmentConfigMap.get(InstancePartitionsType.OFFLINE) != null)
             || AssignmentStrategy.REPLICA_GROUP_SEGMENT_ASSIGNMENT_STRATEGY
             .equalsIgnoreCase(tableConfig.getValidationConfig().getSegmentAssignmentStrategy()));
       // Allow CONSUMING/COMPLETED instance assignment if the real-time table has it configured
       case CONSUMING:
       case COMPLETED:
-        return tableType == TableType.REALTIME && (instanceAssignmentConfigMap != null && instanceAssignmentConfigMap
-            .containsKey(instancePartitionsType));
+        return tableType == TableType.REALTIME && (instanceAssignmentConfigMap != null
+            && instanceAssignmentConfigMap.get(instancePartitionsType) != null);
       default:
         throw new IllegalStateException();
     }
@@ -71,23 +85,21 @@ public class InstanceAssignmentConfigUtils {
     Map<InstancePartitionsType, InstanceAssignmentConfig> instanceAssignmentConfigMap =
         tableConfig.getInstanceAssignmentConfigMap();
     if (instanceAssignmentConfigMap != null) {
-      if (instanceAssignmentConfigMap.containsKey(instancePartitionsType)) {
-        return instanceAssignmentConfigMap.get(instancePartitionsType);
+      InstanceAssignmentConfig instanceAssignmentConfig = instanceAssignmentConfigMap.get(instancePartitionsType);
+      if (instanceAssignmentConfig != null) {
+        return instanceAssignmentConfig;
       }
     }
 
     // Generate default instance assignment config if it does not exist
     // Only allow default config for offline table with replica-group segment assignment for backward-compatibility
-    InstanceAssignmentConfig instanceAssignmentConfig = new InstanceAssignmentConfig();
 
-    InstanceTagPoolConfig tagPoolConfig = new InstanceTagPoolConfig();
-    tagPoolConfig.setTag(TagNameUtils.getOfflineTagForTenant(tableConfig.getTenantConfig().getServer()));
-    instanceAssignmentConfig.setTagPoolConfig(tagPoolConfig);
+    InstanceTagPoolConfig tagPoolConfig =
+        new InstanceTagPoolConfig(TagNameUtils.extractOfflineServerTag(tableConfig.getTenantConfig()), false, 0, null);
 
-    InstanceReplicaGroupPartitionConfig replicaGroupPartitionConfig = new InstanceReplicaGroupPartitionConfig();
-    replicaGroupPartitionConfig.setReplicaGroupBased(true);
+    InstanceReplicaGroupPartitionConfig replicaGroupPartitionConfig;
     SegmentsValidationAndRetentionConfig segmentConfig = tableConfig.getValidationConfig();
-    replicaGroupPartitionConfig.setNumReplicaGroups(segmentConfig.getReplicationNumber());
+    int numReplicaGroups = segmentConfig.getReplicationNumber();
     ReplicaGroupStrategyConfig replicaGroupStrategyConfig = segmentConfig.getReplicaGroupStrategyConfig();
     Preconditions.checkState(replicaGroupStrategyConfig != null, "Failed to find the replica-group strategy config");
     String partitionColumn = replicaGroupStrategyConfig.getPartitionColumn();
@@ -95,16 +107,15 @@ public class InstanceAssignmentConfigUtils {
       int numPartitions = tableConfig.getIndexingConfig().getSegmentPartitionConfig().getNumPartitions(partitionColumn);
       Preconditions.checkState(numPartitions > 0, "Number of partitions for column: %s is not properly configured",
           partitionColumn);
-      replicaGroupPartitionConfig.setNumPartitions(numPartitions);
-      replicaGroupPartitionConfig.setNumInstancesPerPartition(replicaGroupStrategyConfig.getNumInstancesPerPartition());
+      replicaGroupPartitionConfig = new InstanceReplicaGroupPartitionConfig(true, 0, numReplicaGroups, 0, numPartitions,
+          replicaGroupStrategyConfig.getNumInstancesPerPartition());
     } else {
       // If partition column is not configured, use replicaGroupStrategyConfig.getNumInstancesPerPartition() as
       // number of instances per replica-group for backward-compatibility
-      replicaGroupPartitionConfig
-          .setNumInstancesPerReplicaGroup(replicaGroupStrategyConfig.getNumInstancesPerPartition());
+      replicaGroupPartitionConfig = new InstanceReplicaGroupPartitionConfig(true, 0, numReplicaGroups,
+          replicaGroupStrategyConfig.getNumInstancesPerPartition(), 0, 0);
     }
-    instanceAssignmentConfig.setReplicaGroupPartitionConfig(replicaGroupPartitionConfig);
 
-    return instanceAssignmentConfig;
+    return new InstanceAssignmentConfig(tagPoolConfig, null, replicaGroupPartitionConfig);
   }
 }

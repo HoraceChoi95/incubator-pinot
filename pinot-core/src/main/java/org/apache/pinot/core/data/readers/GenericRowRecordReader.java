@@ -18,10 +18,13 @@
  */
 package org.apache.pinot.core.data.readers;
 
+import java.io.File;
 import java.util.List;
-import org.apache.pinot.common.data.Schema;
-import org.apache.pinot.core.data.GenericRow;
-import org.apache.pinot.core.indexsegment.generator.SegmentGeneratorConfig;
+import javax.annotation.Nullable;
+import org.apache.pinot.spi.data.Schema;
+import org.apache.pinot.spi.data.readers.GenericRow;
+import org.apache.pinot.spi.data.readers.RecordReader;
+import org.apache.pinot.spi.data.readers.RecordReaderConfig;
 
 
 /**
@@ -41,8 +44,7 @@ public class GenericRowRecordReader implements RecordReader {
   }
 
   @Override
-  public void init(SegmentGeneratorConfig segmentGeneratorConfig) {
-
+  public void init(File dataFile, Schema schema, @Nullable RecordReaderConfig recordReaderConfig) {
   }
 
   @Override

@@ -29,18 +29,18 @@ import java.util.Iterator;
 import java.util.List;
 import java.util.Random;
 import org.apache.commons.io.FileUtils;
-import org.apache.pinot.common.data.FieldSpec.DataType;
-import org.apache.pinot.common.data.Schema;
+import org.apache.pinot.spi.data.FieldSpec.DataType;
+import org.apache.pinot.spi.data.Schema;
 import org.apache.pinot.common.response.broker.AggregationResult;
 import org.apache.pinot.common.response.broker.BrokerResponseNative;
 import org.apache.pinot.common.response.broker.GroupByResult;
 import org.apache.pinot.common.segment.ReadMode;
 import org.apache.pinot.core.common.ObjectSerDeUtils;
-import org.apache.pinot.core.data.GenericRow;
+import org.apache.pinot.spi.data.readers.GenericRow;
 import org.apache.pinot.core.data.manager.SegmentDataManager;
 import org.apache.pinot.core.data.manager.offline.ImmutableSegmentDataManager;
 import org.apache.pinot.core.data.readers.GenericRowRecordReader;
-import org.apache.pinot.core.data.readers.RecordReader;
+import org.apache.pinot.spi.data.readers.RecordReader;
 import org.apache.pinot.core.indexsegment.IndexSegment;
 import org.apache.pinot.core.indexsegment.generator.SegmentGeneratorConfig;
 import org.apache.pinot.core.indexsegment.immutable.ImmutableSegment;
@@ -284,7 +284,7 @@ public class SerializedBytesQueriesTest extends BaseQueriesTest {
   @Test
   public void testInterSegmentAggregation()
       throws Exception {
-    BrokerResponseNative brokerResponse = getBrokerResponseForQuery(getAggregationQuery());
+    BrokerResponseNative brokerResponse = getBrokerResponseForPqlQuery(getAggregationQuery());
     List<AggregationResult> aggregationResults = brokerResponse.getAggregationResults();
     assertNotNull(aggregationResults);
     assertEquals(aggregationResults.size(), 5);
@@ -450,7 +450,7 @@ public class SerializedBytesQueriesTest extends BaseQueriesTest {
   @Test
   public void testInterSegmentSVGroupBy()
       throws Exception {
-    BrokerResponseNative brokerResponse = getBrokerResponseForQuery(getSVGroupByQuery());
+    BrokerResponseNative brokerResponse = getBrokerResponseForPqlQuery(getSVGroupByQuery());
     List<AggregationResult> aggregationResults = brokerResponse.getAggregationResults();
     assertNotNull(aggregationResults);
     assertEquals(aggregationResults.size(), 5);
@@ -655,7 +655,7 @@ public class SerializedBytesQueriesTest extends BaseQueriesTest {
   @Test
   public void testInterSegmentMVGroupBy()
       throws Exception {
-    BrokerResponseNative brokerResponse = getBrokerResponseForQuery(getMVGroupByQuery());
+    BrokerResponseNative brokerResponse = getBrokerResponseForPqlQuery(getMVGroupByQuery());
     List<AggregationResult> aggregationResults = brokerResponse.getAggregationResults();
     assertNotNull(aggregationResults);
     assertEquals(aggregationResults.size(), 5);

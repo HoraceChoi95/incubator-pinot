@@ -49,6 +49,8 @@ import org.apache.pinot.thirdeye.detection.DefaultDataProvider;
 import org.apache.pinot.thirdeye.detection.DetectionPipeline;
 import org.apache.pinot.thirdeye.detection.DetectionPipelineLoader;
 import org.apache.pinot.thirdeye.detection.DetectionPipelineResult;
+import org.apache.pinot.thirdeye.detection.cache.builder.AnomaliesCacheBuilder;
+import org.apache.pinot.thirdeye.detection.cache.builder.TimeSeriesCacheBuilder;
 import org.apache.pinot.thirdeye.detection.spi.model.AnomalySlice;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -85,13 +87,15 @@ public class GridSearchTuningAlgorithm implements TuningAlgorithm {
     this.anomalyDAO = DAORegistry.getInstance().getMergedAnomalyResultDAO();
 
     TimeSeriesLoader timeseriesLoader =
-        new DefaultTimeSeriesLoader(metricDAO, datasetDAO, ThirdEyeCacheRegistry.getInstance().getQueryCache());
+        new DefaultTimeSeriesLoader(metricDAO, datasetDAO, ThirdEyeCacheRegistry.getInstance().getQueryCache(), ThirdEyeCacheRegistry.getInstance().getTimeSeriesCache());
 
     AggregationLoader aggregationLoader =
         new DefaultAggregationLoader(metricDAO, datasetDAO, ThirdEyeCacheRegistry.getInstance().getQueryCache(),
             ThirdEyeCacheRegistry.getInstance().getDatasetMaxDataTimeCache());
 
-    this.provider = new DefaultDataProvider(metricDAO, datasetDAO, eventDAO, anomalyDAO, evaluationDAO, timeseriesLoader, aggregationLoader, loader);
+    this.provider = new DefaultDataProvider(metricDAO, datasetDAO, eventDAO, anomalyDAO, evaluationDAO,
+        timeseriesLoader, aggregationLoader, loader, TimeSeriesCacheBuilder.getInstance(),
+        AnomaliesCacheBuilder.getInstance());
     this.scores = new HashMap<>();
     this.results = new LinkedHashMap<>();
     this.scoreFunction = new TimeBucketF1ScoreFunction();
@@ -105,7 +109,8 @@ public class GridSearchTuningAlgorithm implements TuningAlgorithm {
    */
   @Override
   public void fit(AnomalySlice slice, long configId) throws Exception {
-    Collection<MergedAnomalyResultDTO> testAnomalies = this.provider.fetchAnomalies(Collections.singletonList(slice), configId).get(slice);
+    slice = slice.withDetectionId(configId);
+    Collection<MergedAnomalyResultDTO> testAnomalies = this.provider.fetchAnomalies(Collections.singletonList(slice)).get(slice);
     fit(slice, new HashMap<String, Number>(), testAnomalies);
   }
 

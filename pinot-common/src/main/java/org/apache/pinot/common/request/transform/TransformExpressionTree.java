@@ -23,7 +23,7 @@ import java.util.List;
 import java.util.Objects;
 import java.util.Set;
 import javax.annotation.Nonnull;
-import org.apache.pinot.common.utils.EqualityUtils;
+import org.apache.pinot.spi.utils.EqualityUtils;
 import org.apache.pinot.pql.parsers.Pql2Compiler;
 import org.apache.pinot.pql.parsers.pql2.ast.AstNode;
 import org.apache.pinot.pql.parsers.pql2.ast.FunctionCallAstNode;
@@ -81,7 +81,7 @@ public class TransformExpressionTree {
   }
 
   private final ExpressionType _expressionType;
-  private final String _value;
+  private String _value;
   private final List<TransformExpressionTree> _children;
 
   public TransformExpressionTree(AstNode root) {
@@ -130,6 +130,14 @@ public class TransformExpressionTree {
   }
 
   /**
+   * allows value to be set (needed to fix the case)
+   * @param value
+   */
+  public void setValue(String value) {
+    _value = value;
+  }
+
+  /**
    * Returns the children of the node.
    *
    * @return List of children
@@ -145,6 +153,14 @@ public class TransformExpressionTree {
    */
   public boolean isColumn() {
     return _expressionType == ExpressionType.IDENTIFIER;
+  }
+
+  public boolean isFunction() {
+    return _expressionType == ExpressionType.FUNCTION;
+  }
+
+  public boolean isLiteral() {
+    return _expressionType == ExpressionType.LITERAL;
   }
 
   /**

@@ -1,3 +1,19 @@
+/*
+ * Copyright (C) 2014-2018 LinkedIn Corp. (pinot-core@linkedin.com)
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *         http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 package org.apache.pinot.thirdeye.anomaly.detection.trigger;
 
 import java.util.ArrayList;
@@ -21,9 +37,10 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.testng.Assert;
 import org.testng.annotations.AfterClass;
+import org.testng.annotations.AfterMethod;
 import org.testng.annotations.BeforeClass;
+import org.testng.annotations.BeforeMethod;
 import org.testng.annotations.Test;
-
 
 public class DataAvailabilityEventListenerTest {
   private Logger LOG = LoggerFactory.getLogger(this.getClass());
@@ -32,9 +49,10 @@ public class DataAvailabilityEventListenerTest {
   static String TEST_METRIC_PREFIX = "metric_trigger_listener_";
   private DAOTestBase testDAOProvider;
   private DataAvailabilityEventListener _dataAvailabilityEventListener;
+  private MockConsumerDataAvailability consumer = new MockConsumerDataAvailability();
 
-  @BeforeClass
-  public void beforeCLass() {
+  @BeforeMethod
+  public void beforeMethod() {
     testDAOProvider = DAOTestBase.getInstance();
     DetectionConfigManager detectionConfigManager = DAORegistry.getInstance().getDetectionConfigManager();
     MetricConfigManager metricConfigManager = DAORegistry.getInstance().getMetricConfigDAO();
@@ -77,7 +95,6 @@ public class DataAvailabilityEventListenerTest {
     ds2.setLastRefreshTime(2000);
     datasetConfigDAO.save(ds2);
 
-    MockConsumerDataAvailability consumer = new MockConsumerDataAvailability();
     DatasetTriggerInfoRepo.init(100, Collections.singletonList(TEST_DATA_SOURCE));
     List<DataAvailabilityEventFilter> filters = new ArrayList<>();
     filters.add(new OnTimeFilter());
@@ -86,7 +103,7 @@ public class DataAvailabilityEventListenerTest {
   }
 
   @Test
-  public void testConsume1() throws InterruptedException {
+  public void testUpdateOneDataset() throws InterruptedException {
     _dataAvailabilityEventListener.processOneBatch();
     DatasetConfigManager datasetConfigManager = DAORegistry.getInstance().getDatasetConfigDAO();
     DatasetConfigDTO dataset1 = datasetConfigManager.findByDataset(TEST_DATASET_PREFIX + 1);
@@ -98,8 +115,8 @@ public class DataAvailabilityEventListenerTest {
     Assert.assertEquals(dataset2.getLastRefreshTime(), 3000);
   }
 
-  @Test
-  public void testConsume2() throws InterruptedException {
+  @Test(dependsOnMethods = { "testUpdateOneDataset" })
+  public void testUpdateTwoDataset() throws InterruptedException {
     _dataAvailabilityEventListener.processOneBatch();
     DatasetConfigManager datasetConfigManager = DAORegistry.getInstance().getDatasetConfigDAO();
     DatasetConfigDTO dataset1 = datasetConfigManager.findByDataset(TEST_DATASET_PREFIX + 1);
@@ -111,23 +128,21 @@ public class DataAvailabilityEventListenerTest {
     Assert.assertEquals(dataset2.getLastRefreshTime(), 3000);
   }
 
-  @Test
-  public void testConsume3() throws InterruptedException {
-    LOG.info("in testConsume3");
-
+  @Test(dependsOnMethods = { "testUpdateTwoDataset" })
+  public void testNoUpdate() throws InterruptedException {
     _dataAvailabilityEventListener.processOneBatch();
     DatasetConfigManager datasetConfigManager = DAORegistry.getInstance().getDatasetConfigDAO();
     DatasetConfigDTO dataset1 = datasetConfigManager.findByDataset(TEST_DATASET_PREFIX + 1);
     DatasetConfigDTO dataset2 = datasetConfigManager.findByDataset(TEST_DATASET_PREFIX + 2);
     DatasetTriggerInfoRepo datasetTriggerInfoRepo = DatasetTriggerInfoRepo.getInstance();
-    Assert.assertEquals(datasetTriggerInfoRepo.getLastUpdateTimestamp(TEST_DATASET_PREFIX + 1), 3000);
-    Assert.assertEquals(datasetTriggerInfoRepo.getLastUpdateTimestamp(TEST_DATASET_PREFIX + 2), 3000);
-    Assert.assertEquals(dataset1.getLastRefreshTime(), 3000);
-    Assert.assertEquals(dataset2.getLastRefreshTime(), 3000);
+    Assert.assertEquals(datasetTriggerInfoRepo.getLastUpdateTimestamp(TEST_DATASET_PREFIX + 1), 1000);
+    Assert.assertEquals(datasetTriggerInfoRepo.getLastUpdateTimestamp(TEST_DATASET_PREFIX + 2), 2000);
+    Assert.assertEquals(dataset1.getLastRefreshTime(), 1000);
+    Assert.assertEquals(dataset2.getLastRefreshTime(), 2000);
   }
 
-  @AfterClass()
-  public void afterClass() {
+  @AfterMethod()
+  public void afterMethod() {
     _dataAvailabilityEventListener.close();
     testDAOProvider.cleanup();
   }

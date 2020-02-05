@@ -19,7 +19,7 @@
 package org.apache.pinot.core.query.aggregation.function;
 
 import it.unimi.dsi.fastutil.ints.IntOpenHashSet;
-import org.apache.pinot.common.data.FieldSpec;
+import org.apache.pinot.spi.data.FieldSpec;
 import org.apache.pinot.common.function.AggregationFunctionType;
 import org.apache.pinot.core.common.BlockValSet;
 import org.apache.pinot.core.query.aggregation.AggregationResultHolder;
@@ -31,11 +31,6 @@ public class DistinctCountMVAggregationFunction extends DistinctCountAggregation
   @Override
   public AggregationFunctionType getType() {
     return AggregationFunctionType.DISTINCTCOUNTMV;
-  }
-
-  @Override
-  public String getColumnName(String column) {
-    return AggregationFunctionType.DISTINCTCOUNTMV.getName() + "_" + column;
   }
 
   @Override

@@ -99,22 +99,23 @@ public class SqlUtils {
    * @param dimensions list of dimensions
    * @throws SQLException SQL exception if SQL failed
    */
-  public static void createTable(DataSource ds, String tableName,
+  public static void createTableOverride(DataSource ds, String tableName,
       String timeColumn, List<String> metrics, List<String> dimensions) throws SQLException {
     StringBuilder sb = new StringBuilder();
-    sb.append("create table if not exists ");
-    sb.append(tableName);
-    sb.append(" (");
+    sb.append("drop table if exists ").append(tableName).append(";");
+    sb.append("create table ").append(tableName).append(" (");
 
     for (String metric: metrics) {
-      sb.append(metric).append(" decimal(20,3), ");
+      sb.append(metric).append(" decimal(50,3), ");
     }
     for (String dimension: dimensions) {
-      sb.append(dimension).append(" varchar(25), ");
+      sb.append(dimension).append(" varchar(50), ");
     }
-    sb.append(timeColumn).append(" varchar(25) ) ENGINE=InnoDB;");
+    sb.append(timeColumn).append(" varchar(50) ) ENGINE=InnoDB;");
 
     String sql = sb.toString();
+
+    LOG.info("Creating H2 table: " + sql);
 
     try (Connection connection = ds.getConnection();
         Statement statement = connection.createStatement()){
@@ -248,11 +249,7 @@ public class SqlUtils {
 
     sb.append("SELECT ").append(selectionClause).append(" FROM ").append(tableName);
     String betweenClause = getBetweenClause(startTime, endTimeExclusive, dataTimeSpec, sourceName);
-    String datePartitionClause = getDatePartitionClause(startTime);
     sb.append(" WHERE ");
-    if (sourceName.equals(PRESTO)) {
-      sb.append(datePartitionClause).append(" AND ");
-    }
     sb.append(betweenClause);
 
 
@@ -275,20 +272,11 @@ public class SqlUtils {
   }
 
   static String getMaxDataTimeSQL(String timeColumn, String tableName, String sourceName) {
-    if (sourceName.equals(PRESTO)) {
-      return "SELECT MAX(" + timeColumn + ") FROM " + tableName + " WHERE datepartition >= daysago(1)";
-    } else {
-      return "SELECT MAX(" + timeColumn + ") FROM " + tableName;
-    }
-
+    return "SELECT MAX(" + timeColumn + ") FROM " + tableName;
   }
 
   static String getDimensionFiltersSQL(String dimension, String tableName, String sourceName) {
-    if (sourceName.equals(PRESTO)) {
-      return "SELECT DISTINCT(" + dimension + ") FROM " + tableName + " WHERE datepartition >= daysago(1)";
-    } else {
-      return "SELECT DISTINCT(" + dimension + ") FROM " + tableName;
-    }
+    return "SELECT DISTINCT(" + dimension + ") FROM " + tableName;
   }
 
   private static String getSelectionClause(MetricConfigDTO metricConfig, MetricFunction metricFunction, List<String> groupByKeys, TimeGranularity granularity, TimeSpec dateTimeSpec) {
@@ -576,6 +564,8 @@ public class SqlUtils {
         return "%y%m%d";
       case "yyyy-MM-dd hh:mm:ss":
         return "%Y-%m-%d %H:%i:%s";
+      case "yyyy-MM-dd-HH":
+        return "%Y-%m-%d-%H";
       default:
           return "%Y-%m-%d %H:%i:%s";
     }

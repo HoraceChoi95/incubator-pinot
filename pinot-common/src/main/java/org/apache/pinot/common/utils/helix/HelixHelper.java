@@ -43,15 +43,16 @@ import org.apache.helix.model.InstanceConfig;
 import org.apache.helix.model.builder.HelixConfigScopeBuilder;
 import org.apache.pinot.common.config.TagNameUtils;
 import org.apache.pinot.common.utils.CommonConstants;
-import org.apache.pinot.common.utils.EqualityUtils;
-import org.apache.pinot.common.utils.retry.RetryPolicies;
-import org.apache.pinot.common.utils.retry.RetryPolicy;
+import org.apache.pinot.spi.utils.retry.RetryPolicies;
+import org.apache.pinot.spi.utils.retry.RetryPolicy;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 
 public class HelixHelper {
-  public static final int MAX_PARTITION_COUNT_IN_UNCOMPRESSED_IDEAL_STATE = 1000;
+  private static final int NUM_PARTITIONS_THRESHOLD_TO_ENABLE_COMPRESSION = 1000;
+  private static final String ENABLE_COMPRESSIONS_KEY = "enableCompression";
+
   private static final RetryPolicy DEFAULT_RETRY_POLICY = RetryPolicies.exponentialBackoffRetryPolicy(5, 1000L, 2.0f);
   private static final Logger LOGGER = LoggerFactory.getLogger(HelixHelper.class);
   private static final ZNRecordSerializer ZN_RECORD_SERIALIZER = new ZNRecordSerializer();
@@ -101,21 +102,25 @@ public class HelixHelper {
           }
 
           // If there are changes to apply, apply them
-          if (!EqualityUtils.isEqual(idealState, updatedIdealState) && updatedIdealState != null) {
+          if (updatedIdealState != null && !idealState.equals(updatedIdealState)) {
+            ZNRecord updatedZNRecord = updatedIdealState.getRecord();
+
             // Update number of partitions
-            Map<String, Map<String, String>> segmentAssignment = updatedIdealState.getRecord().getMapFields();
-            int numPartitions = segmentAssignment.size();
+            int numPartitions = updatedZNRecord.getMapFields().size();
             updatedIdealState.setNumPartitions(numPartitions);
 
             // If the ideal state is large enough, enable compression
-            if (MAX_PARTITION_COUNT_IN_UNCOMPRESSED_IDEAL_STATE < numPartitions) {
-              updatedIdealState.getRecord().setBooleanField("enableCompression", true);
+            boolean enableCompression = numPartitions > NUM_PARTITIONS_THRESHOLD_TO_ENABLE_COMPRESSION;
+            if (enableCompression) {
+              updatedZNRecord.setBooleanField(ENABLE_COMPRESSIONS_KEY, true);
+            } else {
+              updatedZNRecord.getSimpleFields().remove(ENABLE_COMPRESSIONS_KEY);
             }
 
             // Check version and set ideal state
             try {
               if (dataAccessor.getBaseDataAccessor()
-                  .set(idealStateKey.getPath(), updatedIdealState.getRecord(), idealState.getRecord().getVersion(),
+                  .set(idealStateKey.getPath(), updatedZNRecord, idealState.getRecord().getVersion(),
                       AccessOption.PERSISTENT)) {
                 return true;
               } else {
@@ -126,10 +131,8 @@ public class HelixHelper {
               LOGGER.warn("Version changed while updating ideal state for resource: {}", resourceName);
               return false;
             } catch (Exception e) {
-              boolean idealStateIsCompressed =
-                  updatedIdealState.getRecord().getBooleanField("enableCompression", false);
               LOGGER.warn("Caught exception while updating ideal state for resource: {} (compressed={})", resourceName,
-                  idealStateIsCompressed, e);
+                  enableCompression, e);
               return false;
             }
           } else {

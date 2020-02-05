@@ -98,16 +98,8 @@ public class ControllerRequestURLBuilder {
     return StringUtil.join("/", _baseUrl, "tables");
   }
 
-  public String forNewTableCreate() {
-    return StringUtil.join("/", _baseUrl, "v2", "tables");
-  }
-
   public String forUpdateTableConfig(String tableName) {
     return StringUtil.join("/", _baseUrl, "tables", tableName);
-  }
-
-  public String forNewUpdateTableConfig(String tableName) {
-    return StringUtil.join("/", _baseUrl, "v2", "tables", tableName);
   }
 
   public String forTableRebalance(String tableName, String tableType) {
@@ -210,15 +202,6 @@ public class ControllerRequestURLBuilder {
 
   public String forDeleteTableWithType(String tableName, String tableType) {
     return StringUtil.join("/", _baseUrl, "tables", tableName + "?type=" + tableType);
-  }
-
-  public String forDeleteSegmentWithGetAPI(String tableName, String segmentName, String tableType) {
-    return URIUtils.getPath(_baseUrl, "tables", tableName, "segments", URIUtils.encode(segmentName))
-        + "?state=drop&type=" + tableType;
-  }
-
-  public String forDeleteAllSegmentsWithTypeWithGetAPI(String tableName, String tableType) {
-    return StringUtil.join("/", _baseUrl, "tables", tableName, "segments" + "?state=drop&" + "type=" + tableType);
   }
 
   public String forSegmentListAPIWithTableType(String tableName, String tableType) {

@@ -28,10 +28,11 @@ import java.util.Map;
 import java.util.Set;
 import org.apache.commons.configuration.PropertiesConfiguration;
 import org.apache.commons.io.FileUtils;
-import org.apache.pinot.common.data.FieldSpec;
-import org.apache.pinot.common.data.Schema;
+import org.apache.pinot.spi.data.FieldSpec;
+import org.apache.pinot.spi.data.Schema;
+import org.apache.pinot.spi.utils.BytesUtils;
 import org.apache.pinot.common.utils.StringUtil;
-import org.apache.pinot.common.utils.primitive.ByteArray;
+import org.apache.pinot.spi.utils.ByteArray;
 import org.apache.pinot.core.segment.creator.ColumnIndexCreationInfo;
 import org.apache.pinot.core.segment.creator.ForwardIndexType;
 import org.apache.pinot.core.segment.creator.InvertedIndexType;
@@ -52,16 +53,25 @@ public abstract class BaseDefaultColumnHandler implements DefaultColumnHandler {
 
   protected enum DefaultColumnAction {
     // Present in schema but not in segment.
-    ADD_DIMENSION, ADD_METRIC, // Present in schema & segment but default value doesn't match.
-    UPDATE_DIMENSION, UPDATE_METRIC, // Present in segment but not in schema, auto-generated.
-    REMOVE_DIMENSION, REMOVE_METRIC;
+    ADD_DIMENSION,
+    ADD_METRIC,
+    // Present in segment but not in schema
+    REMOVE_DIMENSION,
+    REMOVE_METRIC,
+    // Present in both segment and schema but one of the following updates is needed
+    UPDATE_DIMENSION_DATA_TYPE,
+    UPDATE_DIMENSION_DEFAULT_VALUE,
+    UPDATE_DIMENSION_NUMBER_OF_VALUES,
+    UPDATE_METRIC_DATA_TYPE,
+    UPDATE_METRIC_DEFAULT_VALUE,
+    UPDATE_METRIC_NUMBER_OF_VALUES;
 
     boolean isAddAction() {
       return this == ADD_DIMENSION || this == ADD_METRIC;
     }
 
     boolean isUpdateAction() {
-      return this == UPDATE_DIMENSION || this == UPDATE_METRIC;
+      return !(isAddAction() || isRemoveAction());
     }
 
     boolean isRemoveAction() {
@@ -179,14 +189,30 @@ public abstract class BaseDefaultColumnHandler implements DefaultColumnHandler {
         boolean isSingleValueInMetadata = columnMetadata.isSingleValue();
         boolean isSingleValueInSchema = fieldSpecInSchema.isSingleValueField();
         String defaultValueInMetadata = columnMetadata.getDefaultNullValueString();
-        String defaultValueInSchema = fieldSpecInSchema.getDefaultNullValue().toString();
-        if (dataTypeInMetadata != dataTypeInSchema || isSingleValueInMetadata != isSingleValueInSchema
-            || !defaultValueInSchema.equals(defaultValueInMetadata)) {
-          if (fieldTypeInMetadata == FieldSpec.FieldType.DIMENSION) {
-            defaultColumnActionMap.put(column, DefaultColumnAction.UPDATE_DIMENSION);
-          } else {
-            Preconditions.checkState(fieldTypeInMetadata == FieldSpec.FieldType.METRIC);
-            defaultColumnActionMap.put(column, DefaultColumnAction.UPDATE_METRIC);
+
+        String defaultValueInSchema;
+        if (dataTypeInSchema == FieldSpec.DataType.BYTES) {
+          defaultValueInSchema = BytesUtils.toHexString((byte[]) fieldSpecInSchema.getDefaultNullValue());
+        } else {
+          defaultValueInSchema = fieldSpecInSchema.getDefaultNullValue().toString();
+        }
+
+        if (fieldTypeInMetadata == FieldSpec.FieldType.DIMENSION) {
+          if (dataTypeInMetadata != dataTypeInSchema) {
+            defaultColumnActionMap.put(column, DefaultColumnAction.UPDATE_DIMENSION_DATA_TYPE);
+          } else if (!defaultValueInSchema.equals(defaultValueInMetadata)) {
+            defaultColumnActionMap.put(column, DefaultColumnAction.UPDATE_DIMENSION_DEFAULT_VALUE);
+          } else if (isSingleValueInMetadata != isSingleValueInSchema) {
+            defaultColumnActionMap.put(column, DefaultColumnAction.UPDATE_DIMENSION_NUMBER_OF_VALUES);
+          }
+        } else {
+          Preconditions.checkState(fieldTypeInMetadata == FieldSpec.FieldType.METRIC);
+          if (dataTypeInMetadata != dataTypeInSchema) {
+            defaultColumnActionMap.put(column, DefaultColumnAction.UPDATE_METRIC_DATA_TYPE);
+          } else if (!defaultValueInSchema.equals(defaultValueInMetadata)) {
+            defaultColumnActionMap.put(column, DefaultColumnAction.UPDATE_METRIC_DEFAULT_VALUE);
+          } else if (isSingleValueInMetadata != isSingleValueInSchema) {
+            defaultColumnActionMap.put(column, DefaultColumnAction.UPDATE_METRIC_NUMBER_OF_VALUES);
           }
         }
       } else {
@@ -306,6 +332,7 @@ public abstract class BaseDefaultColumnHandler implements DefaultColumnHandler {
         break;
       case BYTES:
         Preconditions.checkState(defaultValue instanceof byte[]);
+        dictionaryElementSize = ((byte[]) defaultValue).length;
         sortedArray = new ByteArray[] {new ByteArray((byte[]) defaultValue)};
         break;
       default:

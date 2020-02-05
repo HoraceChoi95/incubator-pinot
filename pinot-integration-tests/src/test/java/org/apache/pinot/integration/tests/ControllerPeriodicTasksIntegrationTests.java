@@ -39,19 +39,19 @@ import org.apache.pinot.common.config.TableNameBuilder;
 import org.apache.pinot.common.config.TagNameUtils;
 import org.apache.pinot.common.config.TagOverrideConfig;
 import org.apache.pinot.common.config.TenantConfig;
-import org.apache.pinot.common.data.Schema;
+import org.apache.pinot.spi.data.Schema;
 import org.apache.pinot.common.metrics.ControllerGauge;
 import org.apache.pinot.common.metrics.ControllerMeter;
 import org.apache.pinot.common.metrics.ControllerMetrics;
 import org.apache.pinot.common.metrics.ValidationMetrics;
 import org.apache.pinot.common.utils.CommonConstants;
 import org.apache.pinot.common.utils.helix.HelixHelper;
-import org.apache.pinot.common.utils.retry.RetryPolicies;
+import org.apache.pinot.spi.utils.retry.RetryPolicies;
 import org.apache.pinot.controller.ControllerConf;
 import org.apache.pinot.controller.validation.OfflineSegmentIntervalChecker;
 import org.apache.pinot.controller.validation.RealtimeSegmentValidationManager;
 import org.apache.pinot.core.indexsegment.generator.SegmentVersion;
-import org.apache.pinot.core.realtime.impl.kafka.KafkaStarterUtils;
+import org.apache.pinot.tools.utils.KafkaStarterUtils;
 import org.apache.pinot.util.TestUtils;
 import org.testng.Assert;
 import org.testng.ITestContext;
@@ -166,9 +166,7 @@ public class ControllerPeriodicTasksIntegrationTests extends BaseClusterIntegrat
    */
   private void setupOfflineTable(String table)
       throws Exception {
-    _realtimeTableConfig = null;
     addOfflineTable(table, null, null, TENANT_NAME, TENANT_NAME, null, SegmentVersion.v1, null, null, null, null, null);
-    completeTableConfiguration();
   }
 
   /**
@@ -178,7 +176,6 @@ public class ControllerPeriodicTasksIntegrationTests extends BaseClusterIntegrat
       throws Exception {
     TestUtils.ensureDirectoriesExistAndEmpty(_segmentDir, _tarDir);
     setTableName(tableName);
-    _realtimeTableConfig = null;
 
     File schemaFile = getSchemaFile();
     Schema schema = Schema.fromFile(schemaFile);
@@ -193,7 +190,6 @@ public class ControllerPeriodicTasksIntegrationTests extends BaseClusterIntegrat
 
     addOfflineTable(tableName, timeColumnName, timeType, TENANT_NAME, TENANT_NAME, null, SegmentVersion.v1, null, null,
         null, null, null);
-    completeTableConfiguration();
 
     ExecutorService executor = Executors.newCachedThreadPool();
     ClusterIntegrationTestUtils
@@ -209,7 +205,6 @@ public class ControllerPeriodicTasksIntegrationTests extends BaseClusterIntegrat
    */
   private void setupRealtimeTable(String table, String topic, File avroFile)
       throws Exception {
-    _offlineTableConfig = null;
     File schemaFile = getSchemaFile();
     Schema schema = Schema.fromFile(schemaFile);
     String schemaName = schema.getSchemaName();
@@ -225,7 +220,6 @@ public class ControllerPeriodicTasksIntegrationTests extends BaseClusterIntegrat
         getRealtimeSegmentFlushSize(), avroFile, timeColumnName, timeType, schemaName, TENANT_NAME, TENANT_NAME,
         getLoadMode(), getSortedColumn(), getInvertedIndexColumns(), getBloomFilterIndexColumns(), getRawIndexColumns(),
         getTaskConfig(), getStreamConsumerFactoryClassName());
-    completeTableConfiguration();
   }
 
   @Override
@@ -342,7 +336,7 @@ public class ControllerPeriodicTasksIntegrationTests extends BaseClusterIntegrat
       Assert.assertEquals(controllerMetrics.getValueOfTableGauge(tableName, ControllerGauge.IDEALSTATE_ZNODE_SIZE),
           idealState.toString().length());
       Assert.assertEquals(controllerMetrics.getValueOfTableGauge(tableName, ControllerGauge.SEGMENT_COUNT),
-          (long) (idealState.getPartitionSet().size()));
+          idealState.getPartitionSet().size());
     }
     Assert.assertEquals(controllerMetrics.getValueOfTableGauge(tableName, ControllerGauge.NUMBER_OF_REPLICAS),
         numReplicas);
@@ -379,13 +373,8 @@ public class ControllerPeriodicTasksIntegrationTests extends BaseClusterIntegrat
     context.setAttribute("relocationTable", relocationTable);
 
     // add tag override for relocation
-    TenantConfig tenantConfig = new TenantConfig();
-    tenantConfig.setServer(TENANT_NAME);
-    tenantConfig.setBroker(TENANT_NAME);
-    TagOverrideConfig tagOverrideConfig = new TagOverrideConfig();
-    tagOverrideConfig.setRealtimeConsuming(TENANT_NAME + "_REALTIME");
-    tagOverrideConfig.setRealtimeCompleted(TENANT_NAME + "_OFFLINE");
-    tenantConfig.setTagOverrideConfig(tagOverrideConfig);
+    TenantConfig tenantConfig = new TenantConfig(TENANT_NAME, TENANT_NAME,
+        new TagOverrideConfig(TENANT_NAME + "_REALTIME", TENANT_NAME + "_OFFLINE"));
     updateRealtimeTableTenant(TableNameBuilder.extractRawTableName(relocationTable), tenantConfig);
   }
 
@@ -559,11 +548,6 @@ public class ControllerPeriodicTasksIntegrationTests extends BaseClusterIntegrat
   }
 
   // TODO: tests for other ControllerPeriodicTasks (RetentionManagert , RealtimeSegmentValidationManager)
-
-  @Override
-  protected boolean isUsingNewConfigFormat() {
-    return true;
-  }
 
   @Override
   protected boolean useLlc() {

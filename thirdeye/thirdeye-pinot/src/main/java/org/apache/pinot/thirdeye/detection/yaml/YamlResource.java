@@ -28,10 +28,8 @@ import io.swagger.annotations.ApiOperation;
 import io.swagger.annotations.ApiParam;
 import java.io.PrintWriter;
 import java.io.StringWriter;
-import java.lang.reflect.InvocationTargetException;
 import java.util.ArrayList;
 import java.util.Collection;
-import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -88,6 +86,11 @@ import org.apache.pinot.thirdeye.detection.DefaultDataProvider;
 import org.apache.pinot.thirdeye.detection.DetectionPipeline;
 import org.apache.pinot.thirdeye.detection.DetectionPipelineLoader;
 import org.apache.pinot.thirdeye.detection.DetectionPipelineResult;
+import org.apache.pinot.thirdeye.detection.cache.CouchbaseCacheDAO;
+import org.apache.pinot.thirdeye.detection.cache.DefaultTimeSeriesCache;
+import org.apache.pinot.thirdeye.detection.cache.TimeSeriesCache;
+import org.apache.pinot.thirdeye.detection.cache.builder.AnomaliesCacheBuilder;
+import org.apache.pinot.thirdeye.detection.cache.builder.TimeSeriesCacheBuilder;
 import org.apache.pinot.thirdeye.detection.onboard.YamlOnboardingTaskInfo;
 import org.apache.pinot.thirdeye.detection.spi.components.BaselineProvider;
 import org.apache.pinot.thirdeye.detection.spi.model.TimeSeries;
@@ -161,7 +164,7 @@ public class YamlResource {
     this.previewTimeout = previewConfig.getTimeout();
 
     TimeSeriesLoader timeseriesLoader =
-        new DefaultTimeSeriesLoader(metricDAO, datasetDAO, ThirdEyeCacheRegistry.getInstance().getQueryCache());
+        new DefaultTimeSeriesLoader(metricDAO, datasetDAO, ThirdEyeCacheRegistry.getInstance().getQueryCache(), ThirdEyeCacheRegistry.getInstance().getTimeSeriesCache());
 
     AggregationLoader aggregationLoader =
         new DefaultAggregationLoader(metricDAO, datasetDAO, ThirdEyeCacheRegistry.getInstance().getQueryCache(),
@@ -169,7 +172,9 @@ public class YamlResource {
 
     this.loader = new DetectionPipelineLoader();
 
-    this.provider = new DefaultDataProvider(metricDAO, datasetDAO, eventDAO, anomalyDAO, evaluationDAO, timeseriesLoader, aggregationLoader, loader);
+    this.provider = new DefaultDataProvider(metricDAO, datasetDAO, eventDAO, anomalyDAO, evaluationDAO,
+        timeseriesLoader, aggregationLoader, loader, TimeSeriesCacheBuilder.getInstance(),
+        AnomaliesCacheBuilder.getInstance());
 
     this.detectionValidator = new DetectionConfigValidator(this.provider);
     this.subscriptionValidator = new SubscriptionConfigValidator();
@@ -865,21 +870,121 @@ public class YamlResource {
   }
 
   /**
-   * List all yaml configurations as JSON enhanced with detection config id, isActive and createBy information.
+   * Toggle active/inactive for given detection
    *
-   * @param id id of a specific detection config yaml to list (optional)
+   * @param detectionId detection config id (must exist)
+   * @param active value to set for active field in detection config
+   */
+  @PUT
+  @Path("/activation/{id}")
+  @ApiOperation("Make detection active or inactive, given id")
+  @Produces(MediaType.APPLICATION_JSON)
+  public Response toggleActivation(
+      @ApiParam("Detection configuration id for the alert") @NotNull @PathParam("id") long detectionId,
+      @ApiParam("Active status you want to set for the alert") @NotNull @QueryParam("active") boolean active) throws Exception {
+    Map<String, String> responseMessage = new HashMap<>();
+    try {
+      DetectionConfigDTO config = this.detectionConfigDAO.findById(detectionId);
+      if (config == null) {
+        throw new IllegalArgumentException(String.format("Cannot find config %d", detectionId));
+      }
+
+      // update state
+      config.setActive(active);
+      this.detectionConfigDAO.update(config);
+      responseMessage.put("message", "Alert activation toggled to " + active + " for detection id " + detectionId);
+    } catch (Exception e) {
+      LOG.error("Error toggling activation on detection id " + detectionId, e);
+      responseMessage.put("message", "Failed to toggle activation: " + e.getMessage());
+      return Response.serverError().entity(responseMessage).build();
+    }
+
+    LOG.info("Alert activation toggled to {} for detection id {}", active , detectionId);
+    return Response.ok(responseMessage).build();
+  }
+
+  /**
+   * Implements filter for detection config.
+   * Client can filter by dataset or metric or both.  It only filters if they are not null in params and config
+   *
+   * @param detectionConfig The detection configuration after being enhanced by DetectionConfigFormatter::format.
+   * @param dataset The dataset param passed by the client in the REST API call.
+   * @param metric The metric param passed by the client in the REST API call.
+   * @return true if the config matches query params that are passed by client.
+   */
+  private boolean filterConfigsBy(Map<String, Object> detectionConfig, String dataset, String metric) {
+    List datasetList = (List) detectionConfig.get("datasetNames");
+    String metricString = (String) detectionConfig.get("metric");
+    // defaults are true so we filter only if the params are passed
+    boolean metricMatch = true;
+    boolean datasetMatch = true;
+    // check metric only if it was passed
+    if (metric != null ) {
+      // equals method should not be called on null
+      metricMatch = metricString != null && metricString.equals(metric);
+    }
+    // check dataset only if it was passed
+    if (dataset != null) {
+      // contains method should not be called on null
+      datasetMatch = datasetList != null && datasetList.contains(dataset);
+    }
+    // config should satisfy both filters
+    return metricMatch && datasetMatch;
+  }
+
+  /**
+   * Query all detection yaml configurations and optionally filter, then format as JSON and enhance with
+   * detection config id, isActive, and createdBy information
+   *
+   * @param dataset The dataset param passed by the client in the REST API call.
+   * @param metric The metric param passed by the client in the REST API call.
+   * @return the yaml configuration converted in to JSON, with enhanced information from detection config DTO.
+   */
+  private List<Map<String, Object>> queryDetectionConfigurations(String dataset, String metric) {
+    List<Map<String, Object>> yamls;
+    if (dataset == null && metric == null) {
+      yamls = this.detectionConfigDAO
+          .findAll()
+          .parallelStream()
+          .map(this.detectionConfigFormatter::format)
+          .collect(Collectors.toList());
+    } else {
+      yamls = this.detectionConfigDAO
+          .findAll()
+          .parallelStream()
+          .map(this.detectionConfigFormatter::format)
+          .filter(y -> filterConfigsBy(y, dataset, metric))
+          .collect(Collectors.toList());
+    }
+    return yamls;
+  }
+
+
+  /**
+   * List all yaml configurations as JSON enhanced with detection config id, isActive and createBy information.
+   * @param dataset the dataset to filter results by (optional)
+   * @param metric the metric to filter results by (optional)
    * @return the yaml configuration converted in to JSON, with enhanced information from detection config DTO.
    */
   @GET
   @Path("/list")
+  @ApiOperation("Get the list of all detection YAML configurations as JSON enhanced with additional information, optionally filtered.")
   @Produces(MediaType.APPLICATION_JSON)
-  public List<Object> listYamls(@QueryParam("id") Long id){
-    List<DetectionConfigDTO> detectionConfigDTOs;
-    if (id == null) {
-      detectionConfigDTOs = this.detectionConfigDAO.findAll();
-    } else {
-      detectionConfigDTOs = Collections.singletonList(this.detectionConfigDAO.findById(id));
+  public Response listYamls(
+      @ApiParam("Dataset the detection configurations should be filtered by") @QueryParam("dataset") String dataset,
+      @ApiParam("Metric the detection configurations should be filtered by") @QueryParam("metric") String metric){
+    Map<String, String> responseMessage = new HashMap<>();
+    List<Map<String, Object>> yamls;
+    try {
+      yamls = queryDetectionConfigurations(dataset, metric);
+    } catch (Exception e) {
+      LOG.warn("Error while fetching detection yaml configs.", e.getMessage());
+      responseMessage.put("message", "Failed to fetch all the detection configurations.");
+      responseMessage.put("more-info", "Error = " + e.getMessage());
+      return Response.serverError().entity(responseMessage).build();
     }
-    return detectionConfigDTOs.parallelStream().map(this.detectionConfigFormatter::format).collect(Collectors.toList());
+
+    LOG.info("Successfully returned " + yamls.size() + " detection configs.");
+    return Response.ok(yamls).build();
   }
 }

@@ -20,13 +20,16 @@ package org.apache.pinot.sql.parsers;
 
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import org.apache.calcite.config.Lex;
 import org.apache.calcite.sql.SqlBasicCall;
+import org.apache.calcite.sql.SqlDataTypeSpec;
 import org.apache.calcite.sql.SqlIdentifier;
 import org.apache.calcite.sql.SqlKind;
 import org.apache.calcite.sql.SqlLiteral;
@@ -38,12 +41,16 @@ import org.apache.calcite.sql.SqlSelect;
 import org.apache.calcite.sql.SqlSelectKeyword;
 import org.apache.calcite.sql.parser.SqlParseException;
 import org.apache.calcite.sql.parser.SqlParser;
+import org.apache.calcite.sql.parser.SqlParserImplFactory;
+import org.apache.calcite.sql.parser.babel.SqlBabelParserImpl;
+import org.apache.calcite.sql.validate.SqlConformanceEnum;
 import org.apache.pinot.common.function.AggregationFunctionType;
 import org.apache.pinot.common.function.FunctionDefinitionRegistry;
 import org.apache.pinot.common.request.DataSource;
 import org.apache.pinot.common.request.Expression;
 import org.apache.pinot.common.request.ExpressionType;
 import org.apache.pinot.common.request.Function;
+import org.apache.pinot.common.request.Identifier;
 import org.apache.pinot.common.request.PinotQuery;
 import org.apache.pinot.common.utils.request.RequestUtils;
 import org.apache.pinot.pql.parsers.Pql2Compiler;
@@ -91,6 +98,108 @@ public class CalciteSqlParser {
     return pinotQuery;
   }
 
+  static void validate(Map<Identifier, Expression> aliasMap, PinotQuery pinotQuery)
+      throws SqlCompilationException {
+    validateSelectionClause(aliasMap, pinotQuery);
+    validateGroupByClause(pinotQuery);
+  }
+
+  private static void validateSelectionClause(Map<Identifier, Expression> aliasMap, PinotQuery pinotQuery)
+      throws SqlCompilationException {
+    // Sanity check on selection expression shouldn't use alias reference.
+    Set<String> aliasKeys = new HashSet<>();
+    for (Identifier identifier : aliasMap.keySet()) {
+      aliasKeys.add(identifier.getName().toLowerCase());
+    }
+    for (Expression selectExpr : pinotQuery.getSelectList()) {
+      matchIdentifierInAliasMap(selectExpr, aliasKeys);
+    }
+  }
+
+  private static void matchIdentifierInAliasMap(Expression selectExpr, Set<String> aliasKeys)
+      throws SqlCompilationException {
+    if (selectExpr.getFunctionCall() != null) {
+      if (selectExpr.getFunctionCall().getOperator().equalsIgnoreCase(SqlKind.AS.toString())) {
+        matchIdentifierInAliasMap(selectExpr.getFunctionCall().getOperands().get(0), aliasKeys);
+      } else {
+        for (Expression operand : selectExpr.getFunctionCall().getOperands()) {
+          matchIdentifierInAliasMap(operand, aliasKeys);
+        }
+      }
+    }
+    if (selectExpr.getIdentifier() != null) {
+      if (aliasKeys.contains(selectExpr.getIdentifier().getName().toLowerCase())) {
+        throw new SqlCompilationException(
+            "Alias " + selectExpr.getIdentifier().getName() + " cannot be referred in SELECT Clause");
+      }
+    }
+  }
+
+  private static void validateGroupByClause(PinotQuery pinotQuery)
+      throws SqlCompilationException {
+    if (pinotQuery.getGroupByList() == null) {
+      return;
+    }
+    // Sanity check group by query: All non-aggregate expression in selection list should be also included in group by list.
+    for (Expression selectExpression : pinotQuery.getSelectList()) {
+      if (!isAggregateExpression(selectExpression)) {
+        boolean foundInGroupByClause = false;
+        Expression selectionToCheck;
+        if (selectExpression.getFunctionCall() != null && selectExpression.getFunctionCall().getOperator()
+            .equalsIgnoreCase(SqlKind.AS.toString())) {
+          selectionToCheck = selectExpression.getFunctionCall().getOperands().get(0);
+        } else {
+          selectionToCheck = selectExpression;
+        }
+        for (Expression groupByExpression : pinotQuery.getGroupByList()) {
+          if (groupByExpression.equals(selectionToCheck)) {
+            foundInGroupByClause = true;
+          }
+        }
+        if (!foundInGroupByClause) {
+          throw new SqlCompilationException(
+              "'" + RequestUtils.prettyPrint(selectionToCheck) + "' should appear in GROUP BY clause.");
+        }
+      }
+    }
+    // Sanity check on group by clause shouldn't contain aggregate expression.
+    for (Expression groupByExpression : pinotQuery.getGroupByList()) {
+      if (isAggregateExpression(groupByExpression)) {
+        throw new SqlCompilationException("Aggregate expression '" + RequestUtils.prettyPrint(groupByExpression)
+            + "' is not allowed in GROUP BY clause.");
+      }
+    }
+  }
+
+  private static boolean isAggregateExpression(Expression expression) {
+    if (expression.getFunctionCall() != null) {
+      String operator = expression.getFunctionCall().getOperator();
+      try {
+        AggregationFunctionType.getAggregationFunctionType(operator);
+        return true;
+      } catch (IllegalArgumentException e) {
+      }
+      for (Expression operand : expression.getFunctionCall().getOperands()) {
+        if (isAggregateExpression(operand)) {
+          return true;
+        }
+      }
+    }
+    return false;
+  }
+
+  public static Set<String> extractIdentifiers(List<Expression> expressions) {
+    Set<String> identifiers = new HashSet<>();
+    for (Expression expression : expressions) {
+      if (expression.getIdentifier() != null) {
+        identifiers.add(expression.getIdentifier().getName());
+      } else if (expression.getFunctionCall() != null) {
+        identifiers.addAll(extractIdentifiers(expression.getFunctionCall().getOperands()));
+      }
+    }
+    return identifiers;
+  }
+
   private static void setOptions(PinotQuery pinotQuery, List<String> optionsStatements) {
     if (optionsStatements.isEmpty()) {
       return;
@@ -111,6 +220,9 @@ public class CalciteSqlParser {
   private static PinotQuery compileCalciteSqlToPinotQuery(String sql) {
     SqlParser.ConfigBuilder parserBuilder = SqlParser.configBuilder();
     parserBuilder.setLex(PINOT_LEX);
+    // BABEL is a very liberal conformance value that allows anything supported by any dialect
+    parserBuilder.setConformance(SqlConformanceEnum.BABEL);
+    parserBuilder.setParserFactory(SqlBabelParserImpl.FACTORY);
     SqlParser sqlParser = SqlParser.create(sql, parserBuilder.build());
     final SqlNode sqlNode;
     try {
@@ -126,14 +238,6 @@ public class CalciteSqlParser {
     switch (sqlNode.getKind()) {
       case ORDER_BY:
         selectOrderBySqlNode = (SqlOrderBy) sqlNode;
-        SqlNode sqlSelectNode = selectOrderBySqlNode.query;
-        if (sqlSelectNode instanceof SqlSelect) {
-          SqlSelect sqlSelect = (SqlSelect) sqlSelectNode;
-          if (sqlSelect.getModifierNode(SqlSelectKeyword.DISTINCT) != null) {
-            // TODO: add support for ORDER BY with DISTINCT
-            throw new SqlCompilationException("DISTINCT with ORDER BY is not supported");
-          }
-        }
         if (selectOrderBySqlNode.orderList != null) {
           pinotQuery.setOrderByList(convertOrderByList(selectOrderBySqlNode.orderList));
         }
@@ -180,7 +284,58 @@ public class CalciteSqlParser {
         throw new RuntimeException(
             "Unable to convert SqlNode: " + sqlNode + " to PinotQuery. Unknown node type: " + sqlNode.getKind());
     }
+    Map<Identifier, Expression> aliasMap = extractAlias(pinotQuery.getSelectList());
+    applyAlias(aliasMap, pinotQuery);
+    validate(aliasMap, pinotQuery);
     return pinotQuery;
+  }
+
+  private static void applyAlias(Map<Identifier, Expression> aliasMap, PinotQuery pinotQuery) {
+    if (pinotQuery.isSetFilterExpression()) {
+      applyAlias(aliasMap, pinotQuery.getFilterExpression());
+    }
+    if (pinotQuery.isSetGroupByList()) {
+      for (Expression groupByExpr : pinotQuery.getGroupByList()) {
+        applyAlias(aliasMap, groupByExpr);
+      }
+    }
+    if (pinotQuery.isSetOrderByList()) {
+      for (Expression orderByExpr : pinotQuery.getOrderByList()) {
+        applyAlias(aliasMap, orderByExpr);
+      }
+    }
+  }
+
+  private static void applyAlias(Map<Identifier, Expression> aliasMap, Expression expression) {
+    if (expression == null) {
+      return;
+    }
+    Identifier identifierKey = expression.getIdentifier();
+    if ((identifierKey != null) && (aliasMap.containsKey(identifierKey))) {
+      Expression aliasExpression = aliasMap.get(identifierKey);
+      expression.setType(aliasExpression.getType()).setIdentifier(aliasExpression.getIdentifier())
+          .setFunctionCall(aliasExpression.getFunctionCall()).setLiteral(aliasExpression.getLiteral());
+    }
+    if (expression.getFunctionCall() != null) {
+      for (Expression operand : expression.getFunctionCall().getOperands()) {
+        applyAlias(aliasMap, operand);
+      }
+    }
+  }
+
+  private static Map<Identifier, Expression> extractAlias(List<Expression> expressions) {
+    Map<Identifier, Expression> aliasMap = new HashMap<>();
+    for (Expression expression : expressions) {
+      Function functionCall = expression.getFunctionCall();
+      if (functionCall == null) {
+        continue;
+      }
+      if (functionCall.getOperator().equalsIgnoreCase(SqlKind.AS.toString())) {
+        Expression identifierExpr = functionCall.getOperands().get(1);
+        aliasMap.put(identifierExpr.getIdentifier(), functionCall.getOperands().get(0));
+      }
+    }
+    return aliasMap;
   }
 
   private static List<String> extractOptionsFromSql(String sql) {
@@ -232,17 +387,16 @@ public class CalciteSqlParser {
     final SqlKind kind = node.getKind();
     Expression expression;
     switch (kind) {
-      case IDENTIFIER:
-        expression = RequestUtils.getFunctionExpression("ASC");
-        expression.getFunctionCall().addToOperands(toExpression(node));
-        break;
       case DESCENDING:
         SqlBasicCall basicCall = (SqlBasicCall) node;
         expression = RequestUtils.getFunctionExpression("DESC");
         expression.getFunctionCall().addToOperands(toExpression(basicCall.getOperands()[0]));
         break;
+      case IDENTIFIER:
       default:
-        throw new RuntimeException("Unknown node type: " + node.getKind());
+        expression = RequestUtils.getFunctionExpression("ASC");
+        expression.getFunctionCall().addToOperands(toExpression(node));
+        break;
     }
     return expression;
   }
@@ -292,27 +446,31 @@ public class CalciteSqlParser {
       case LITERAL:
         return RequestUtils.getLiteralExpression((SqlLiteral) node);
       case AS:
-        // Aggregation
-      case COUNT:
-      case SUM:
-      case AVG:
-      case MAX:
-      case MIN:
-      case HOP:
-      case OTHER_FUNCTION:
-        // Filtering
-      case OR:
-      case AND:
-      case EQUALS:
-      case NOT_EQUALS:
-      case BETWEEN:
-      case GREATER_THAN:
-      case GREATER_THAN_OR_EQUAL:
-      case LESS_THAN:
-      case LESS_THAN_OR_EQUAL:
-      case IN:
-      case NOT_IN:
-      case LIKE:
+        SqlBasicCall asFuncSqlNode = (SqlBasicCall) node;
+        final Expression asFuncExpr = RequestUtils.getFunctionExpression(SqlKind.AS.toString());
+        asFuncExpr.getFunctionCall().addToOperands(toExpression(asFuncSqlNode.getOperands()[0]));
+        SqlNode aliasSqlNode = asFuncSqlNode.getOperands()[1];
+        String aliasName;
+        switch (aliasSqlNode.getKind()) {
+          case IDENTIFIER:
+            aliasName = ((SqlIdentifier) aliasSqlNode).getSimple();
+            break;
+          case LITERAL:
+            aliasName = ((SqlLiteral) aliasSqlNode).toValue();
+            break;
+          default:
+            throw new SqlCompilationException("Unsupported Alias sql node - " + aliasSqlNode);
+        }
+        asFuncExpr.getFunctionCall().addToOperands(RequestUtils.getIdentifierExpression(aliasName));
+        return asFuncExpr;
+      case OTHER:
+        if (node instanceof SqlDataTypeSpec) {
+          // This is to handle expression like: CAST(col AS INT)
+          return RequestUtils.getLiteralExpression(((SqlDataTypeSpec) node).getTypeName().getSimple());
+        } else {
+          // Move on to process default logic.
+        }
+      default:
         SqlBasicCall funcSqlNode = (SqlBasicCall) node;
         String funcName = funcSqlNode.getOperator().getKind().name();
         if (funcSqlNode.getOperator().getKind() == SqlKind.OTHER_FUNCTION) {
@@ -331,8 +489,6 @@ public class CalciteSqlParser {
           }
         }
         return funcExpr;
-      default:
-        throw new RuntimeException("Unknown node type: " + node.getKind());
     }
   }
 }

@@ -18,6 +18,7 @@
  */
 package org.apache.pinot.common.config;
 
+import com.fasterxml.jackson.annotation.JsonPropertyDescription;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.JsonNode;
@@ -32,16 +33,12 @@ import javax.annotation.Nullable;
 import org.apache.helix.ZNRecord;
 import org.apache.pinot.common.assignment.InstancePartitionsType;
 import org.apache.pinot.common.config.instance.InstanceAssignmentConfig;
-import org.apache.pinot.common.config.instance.InstanceAssignmentConfigMapChildKeyHandler;
 import org.apache.pinot.common.utils.CommonConstants.Helix.TableType;
-import org.apache.pinot.common.utils.EqualityUtils;
-import org.apache.pinot.common.utils.JsonUtils;
+import org.apache.pinot.spi.utils.JsonUtils;
 
 
 @SuppressWarnings({"Duplicates", "unused"})
-@ConfigDoc(value = "Configuration for a table", mandatory = true)
-@ConfigKey("table")
-public class TableConfig {
+public class TableConfig extends BaseJsonConfig {
   public static final String TABLE_NAME_KEY = "tableName";
   public static final String TABLE_TYPE_KEY = "tableType";
   public static final String VALIDATION_CONFIG_KEY = "segmentsConfig";
@@ -55,38 +52,22 @@ public class TableConfig {
 
   private static final String FIELD_MISSING_MESSAGE_TEMPLATE = "Mandatory field '%s' is missing";
 
-  @ConfigKey("name")
-  @ConfigDoc(value = "The name for the table (with type suffix)", mandatory = true, exampleValue = "myTable_OFFLINE")
+  @JsonPropertyDescription("The name for the table (with type suffix), e.g. \"myTable_OFFLINE\" (mandatory)")
   private String _tableName;
 
-  @ConfigKey("type")
-  @ConfigDoc(value = "The type of the table (OFFLINE|REALTIME)", mandatory = true)
+  @JsonPropertyDescription(value = "The type of the table (OFFLINE|REALTIME) (mandatory)")
   private TableType _tableType;
 
-  @NestedConfig
   private SegmentsValidationAndRetentionConfig _validationConfig;
-
-  @NestedConfig
   private TenantConfig _tenantConfig;
-
-  @NestedConfig
   private IndexingConfig _indexingConfig;
-
-  @NestedConfig
   private TableCustomConfig _customConfig;
 
-  @ConfigKey("quota")
-  @ConfigDoc("Resource quota associated with this table")
+  @JsonPropertyDescription("Resource quota associated with this table")
   private QuotaConfig _quotaConfig;
 
-  @NestedConfig
   private TableTaskConfig _taskConfig;
-
-  @NestedConfig
   private RoutingConfig _routingConfig;
-
-  @ConfigKey(INSTANCE_ASSIGNMENT_CONFIG_MAP_KEY)
-  @UseChildKeyHandler(InstanceAssignmentConfigMapChildKeyHandler.class)
   private Map<InstancePartitionsType, InstanceAssignmentConfig> _instanceAssignmentConfigMap;
 
   /**
@@ -94,8 +75,8 @@ public class TableConfig {
    */
   public TableConfig() {
     // TODO: currently these 2 fields are annotated as non-null. Revisit to see whether that's necessary
-    _tenantConfig = new TenantConfig();
-    _customConfig = new TableCustomConfig();
+    _tenantConfig = new TenantConfig(null, null, null);
+    _customConfig = new TableCustomConfig(null);
   }
 
   private TableConfig(String tableName, TableType tableType, SegmentsValidationAndRetentionConfig validationConfig,
@@ -231,6 +212,11 @@ public class TableConfig {
     }
 
     return jsonConfig;
+  }
+
+  @Override
+  public JsonNode toJsonNode() {
+    return toJsonConfig();
   }
 
   public String toJsonConfigString() {
@@ -428,46 +414,6 @@ public class TableConfig {
   public void setInstanceAssignmentConfigMap(
       Map<InstancePartitionsType, InstanceAssignmentConfig> instanceAssignmentConfigMap) {
     _instanceAssignmentConfigMap = instanceAssignmentConfigMap;
-  }
-
-  @Override
-  public String toString() {
-    try {
-      return JsonUtils.objectToPrettyString(toJsonConfig());
-    } catch (JsonProcessingException e) {
-      throw new RuntimeException(e);
-    }
-  }
-
-  @Override
-  public boolean equals(Object obj) {
-    if (this == obj) {
-      return true;
-    }
-    if (obj instanceof TableConfig) {
-      TableConfig that = (TableConfig) obj;
-      return EqualityUtils.isEqual(_tableName, that._tableName) && EqualityUtils.isEqual(_tableType, that._tableType)
-          && EqualityUtils.isEqual(_validationConfig, that._validationConfig) && EqualityUtils
-          .isEqual(_tenantConfig, that._tenantConfig) && EqualityUtils.isEqual(_indexingConfig, that._indexingConfig)
-          && EqualityUtils.isEqual(_customConfig, that._customConfig) && EqualityUtils
-          .isEqual(_quotaConfig, that._quotaConfig) && EqualityUtils.isEqual(_taskConfig, that._taskConfig)
-          && EqualityUtils.isEqual(_routingConfig, that._routingConfig);
-    }
-    return false;
-  }
-
-  @Override
-  public int hashCode() {
-    int result = EqualityUtils.hashCodeOf(_tableName);
-    result = EqualityUtils.hashCodeOf(result, _tableType);
-    result = EqualityUtils.hashCodeOf(result, _validationConfig);
-    result = EqualityUtils.hashCodeOf(result, _tenantConfig);
-    result = EqualityUtils.hashCodeOf(result, _indexingConfig);
-    result = EqualityUtils.hashCodeOf(result, _customConfig);
-    result = EqualityUtils.hashCodeOf(result, _quotaConfig);
-    result = EqualityUtils.hashCodeOf(result, _taskConfig);
-    result = EqualityUtils.hashCodeOf(result, _routingConfig);
-    return result;
   }
 
   public static class Builder {
@@ -688,10 +634,7 @@ public class TableConfig {
       }
 
       // Tenant config
-      TenantConfig tenantConfig = new TenantConfig();
-      tenantConfig.setBroker(_brokerTenant);
-      tenantConfig.setServer(_serverTenant);
-      tenantConfig.setTagOverrideConfig(_tagOverrideConfig);
+      TenantConfig tenantConfig = new TenantConfig(_brokerTenant, _serverTenant, _tagOverrideConfig);
 
       // Indexing config
       IndexingConfig indexingConfig = new IndexingConfig();
@@ -708,8 +651,7 @@ public class TableConfig {
       indexingConfig.setSegmentPartitionConfig(_segmentPartitionConfig);
 
       if (_customConfig == null) {
-        _customConfig = new TableCustomConfig();
-        _customConfig.setCustomConfigs(new HashMap<>());
+        _customConfig = new TableCustomConfig(null);
       }
 
       return new TableConfig(_tableName, _tableType, validationConfig, tenantConfig, indexingConfig, _customConfig,

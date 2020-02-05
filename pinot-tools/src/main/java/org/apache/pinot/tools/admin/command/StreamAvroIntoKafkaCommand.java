@@ -20,18 +20,23 @@ package org.apache.pinot.tools.admin.command;
 
 import com.google.common.primitives.Longs;
 import com.google.common.util.concurrent.Uninterruptibles;
+import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.IOException;
 import java.util.Properties;
 import java.util.concurrent.TimeUnit;
 import org.apache.avro.file.DataFileStream;
+import org.apache.avro.generic.GenericDatumWriter;
 import org.apache.avro.generic.GenericRecord;
+import org.apache.avro.io.BinaryEncoder;
+import org.apache.avro.io.DatumWriter;
+import org.apache.avro.io.EncoderFactory;
 import org.apache.pinot.common.utils.HashUtil;
-import org.apache.pinot.core.realtime.impl.kafka.KafkaStarterUtils;
-import org.apache.pinot.core.util.AvroUtils;
-import org.apache.pinot.core.realtime.stream.StreamDataProducer;
-import org.apache.pinot.core.realtime.stream.StreamDataProvider;
+import org.apache.pinot.plugin.inputformat.avro.AvroUtils;
+import org.apache.pinot.spi.stream.StreamDataProducer;
+import org.apache.pinot.spi.stream.StreamDataProvider;
 import org.apache.pinot.tools.Command;
+import org.apache.pinot.tools.utils.KafkaStarterUtils;
 import org.kohsuke.args4j.Option;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -57,6 +62,9 @@ public class StreamAvroIntoKafkaCommand extends AbstractBaseAdminCommand impleme
   @Option(name = "-zkAddress", required = false, metaVar = "<string>", usage = "Address of Zookeeper.")
   private String _zkAddress = "localhost:2181";
 
+  @Option(name = "-outputFormat", required = false, metaVar = "<string>", usage = "Data format to produce to Kafka, supported: json(default) and avro")
+  private String _outputFormat = "json";
+
   @Option(name = "-millisBetweenMessages", required = false, metaVar = "<int>", usage = "Delay in milliseconds between messages (default 1000 ms)")
   private String _millisBetweenMessages = "1000";
 
@@ -73,13 +81,13 @@ public class StreamAvroIntoKafkaCommand extends AbstractBaseAdminCommand impleme
   @Override
   public String toString() {
     return "StreamAvroInfoKafka -avroFile " + _avroFile + " -kafkaBrokerList " + _kafkaBrokerList + " -kafkaTopic "
-        + _kafkaTopic + " -millisBetweenMessages " + _millisBetweenMessages;
+        + _kafkaTopic + "-outputFormat" + _outputFormat + " -millisBetweenMessages " + _millisBetweenMessages;
   }
 
   @Override
   public String description() {
     return "Stream the specified Avro file into a Kafka topic, which can be read by Pinot\n"
-        + "by using org.apache.pinot.core.realtime.impl.kafka.KafkaJSONMessageDecoder as the\n"
+        + "by using org.apache.pinot.plugin.stream.kafka.KafkaJSONMessageDecoder as the\n"
         + "message decoder class name (stream.kafka.decoder.class.name).";
   }
 
@@ -104,19 +112,32 @@ public class StreamAvroIntoKafkaCommand extends AbstractBaseAdminCommand impleme
 
     StreamDataProducer streamDataProducer;
     try {
-      streamDataProducer = StreamDataProvider.getStreamDataProducer(KafkaStarterUtils.KAFKA_PRODUCER_CLASS_NAME, properties);
+      streamDataProducer =
+          StreamDataProvider.getStreamDataProducer(KafkaStarterUtils.KAFKA_PRODUCER_CLASS_NAME, properties);
     } catch (Exception e) {
-      throw new RuntimeException("Failed to get StreamDataProducer - " + KafkaStarterUtils.KAFKA_PRODUCER_CLASS_NAME, e);
+      throw new RuntimeException("Failed to get StreamDataProducer - " + KafkaStarterUtils.KAFKA_PRODUCER_CLASS_NAME,
+          e);
     }
     try {
       // Open the Avro file
       DataFileStream<GenericRecord> reader = AvroUtils.getAvroReader(new File(_avroFile));
-
+      DatumWriter<GenericRecord> datumWriter = new GenericDatumWriter<>(reader.getSchema());
       // Iterate over every record
       for (GenericRecord genericRecord : reader) {
+        byte[] bytes;
+        switch (_outputFormat) {
+          case "avro":
+            ByteArrayOutputStream outputStream = new ByteArrayOutputStream();
+            BinaryEncoder encoder = EncoderFactory.get().binaryEncoder(outputStream, null);
+            datumWriter.write(genericRecord, encoder);
+            encoder.flush();
+            bytes = outputStream.toByteArray();
+            break;
+          default:
+            String recordJson = genericRecord.toString();
+            bytes = recordJson.getBytes("utf-8");
+        }
         // Write the message to Kafka
-        String recordJson = genericRecord.toString();
-        byte[] bytes = recordJson.getBytes("utf-8");
         streamDataProducer.produce(_kafkaTopic, Longs.toByteArray(HashUtil.hash64(bytes, bytes.length)), bytes);
 
         // Sleep between messages
@@ -133,5 +154,30 @@ public class StreamAvroIntoKafkaCommand extends AbstractBaseAdminCommand impleme
 
     savePID(System.getProperty("java.io.tmpdir") + File.separator + ".streamAvro.pid");
     return true;
+  }
+
+  public StreamAvroIntoKafkaCommand setAvroFile(String avroFile) {
+    _avroFile = avroFile;
+    return this;
+  }
+
+  public StreamAvroIntoKafkaCommand setKafkaBrokerList(String kafkaBrokerList) {
+    _kafkaBrokerList = kafkaBrokerList;
+    return this;
+  }
+
+  public StreamAvroIntoKafkaCommand setKafkaTopic(String kafkaTopic) {
+    _kafkaTopic = kafkaTopic;
+    return this;
+  }
+
+  public StreamAvroIntoKafkaCommand setZkAddress(String zkAddress) {
+    _zkAddress = zkAddress;
+    return this;
+  }
+
+  public StreamAvroIntoKafkaCommand setOutputFormat(String outputFormat) {
+    _outputFormat = outputFormat;
+    return this;
   }
 }

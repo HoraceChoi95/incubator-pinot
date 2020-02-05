@@ -59,6 +59,7 @@ import org.apache.http.impl.client.HttpClients;
 import org.apache.http.message.BasicNameValuePair;
 import org.apache.http.util.EntityUtils;
 import org.apache.pinot.common.exception.HttpErrorStatusException;
+import org.apache.pinot.spi.utils.JsonUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -161,6 +162,11 @@ public class FileUploadDownloadClient implements Closeable {
     return getURI(HTTPS, host, port, SCHEMA_PATH);
   }
 
+  public static URI getUploadSchemaURI(URI controllerURI)
+      throws URISyntaxException {
+    return getURI(controllerURI.getScheme(), controllerURI.getHost(), controllerURI.getPort(), SCHEMA_PATH);
+  }
+
   /**
    * This method calls the old segment upload endpoint. We will deprecate this behavior soon. Please call
    * getUploadSegmentHttpURI to construct your request.
@@ -199,6 +205,11 @@ public class FileUploadDownloadClient implements Closeable {
   public static URI getUploadSegmentHttpsURI(String host, int port)
       throws URISyntaxException {
     return getURI(HTTPS, host, port, SEGMENT_PATH);
+  }
+
+  public static URI getUploadSegmentURI(URI controllerURI)
+      throws URISyntaxException {
+    return getURI(controllerURI.getScheme(), controllerURI.getHost(), controllerURI.getPort(), SEGMENT_PATH);
   }
 
   private static HttpUriRequest getUploadFileRequest(String method, URI uri, ContentBody contentBody,

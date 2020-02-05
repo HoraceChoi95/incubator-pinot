@@ -18,7 +18,6 @@
  */
 package org.apache.pinot.core.data.readers;
 
-import com.google.common.base.Preconditions;
 import java.io.File;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -26,18 +25,18 @@ import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
-import java.util.Random;
 import java.util.Set;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.TimeUnit;
 import org.apache.commons.lang3.RandomStringUtils;
-import org.apache.pinot.common.data.FieldSpec;
-import org.apache.pinot.common.data.Schema;
-import org.apache.pinot.common.data.TimeFieldSpec;
-import org.apache.pinot.common.utils.time.TimeUtils;
-import org.apache.pinot.core.data.GenericRow;
+import org.apache.pinot.spi.data.FieldSpec;
+import org.apache.pinot.spi.data.Schema;
+import org.apache.pinot.spi.data.TimeFieldSpec;
+import org.apache.pinot.spi.utils.TimeUtils;
+import org.apache.pinot.spi.data.readers.GenericRow;
 import org.apache.pinot.core.indexsegment.generator.SegmentGeneratorConfig;
 import org.apache.pinot.core.segment.creator.impl.SegmentIndexCreationDriverImpl;
+import org.apache.pinot.spi.data.readers.RecordReader;
 
 
 /**
@@ -80,7 +79,7 @@ public class PinotSegmentUtil {
     return value1Set.containsAll(value2Set);
   }
 
-  static File createSegment(Schema schema, String segmentName, String segmentOutputDir, RecordReader recordReader)
+  public static File createSegment(Schema schema, String segmentName, String segmentOutputDir, RecordReader recordReader)
       throws Exception {
     SegmentGeneratorConfig segmentGeneratorConfig = new SegmentGeneratorConfig(schema);
     segmentGeneratorConfig.setTableName(segmentName);

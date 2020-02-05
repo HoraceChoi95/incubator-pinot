@@ -19,8 +19,8 @@
 package org.apache.pinot.core.indexsegment.mutable;
 
 import javax.annotation.Nullable;
-import org.apache.pinot.common.metadata.RowMetadata;
-import org.apache.pinot.core.data.GenericRow;
+import org.apache.pinot.spi.stream.RowMetadata;
+import org.apache.pinot.spi.data.readers.GenericRow;
 import org.apache.pinot.core.indexsegment.IndexSegment;
 
 

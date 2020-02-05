@@ -38,7 +38,7 @@ import org.apache.pinot.common.config.TableConfig;
 import org.apache.pinot.common.config.TableNameBuilder;
 import org.apache.pinot.common.metadata.segment.OfflineSegmentZKMetadata;
 import org.apache.pinot.common.utils.CommonConstants;
-import org.apache.pinot.common.utils.JsonUtils;
+import org.apache.pinot.spi.utils.JsonUtils;
 import org.apache.pinot.common.utils.ServiceStatus;
 import org.apache.pinot.core.indexsegment.generator.SegmentVersion;
 import org.apache.pinot.pql.parsers.Pql2Compiler;
@@ -121,8 +121,6 @@ public class OfflineClusterIntegrationTest extends BaseClusterIntegrationTestSet
     // Create the table
     addOfflineTable(getTableName(), null, null, null, null, getLoadMode(), SegmentVersion.v1, getInvertedIndexColumns(),
         getBloomFilterIndexColumns(), getTaskConfig(), null, null);
-
-    completeTableConfiguration();
 
     // Upload all segments
     uploadSegments(getTableName(), _tarDir);
@@ -227,8 +225,6 @@ public class OfflineClusterIntegrationTest extends BaseClusterIntegrationTestSet
     updateOfflineTable(getTableName(), null, null, null, null, getLoadMode(), SegmentVersion.v1,
         UPDATED_INVERTED_INDEX_COLUMNS, null, getTaskConfig(), null, null);
 
-    updateTableConfiguration();
-
     sendPostRequest(_controllerBaseApiUrl + "/tables/mytable/segments/reload?type=offline", null);
 
     TestUtils.waitForCondition(aVoid -> {
@@ -253,8 +249,6 @@ public class OfflineClusterIntegrationTest extends BaseClusterIntegrationTestSet
     // Update table config and trigger reload
     updateOfflineTable(getTableName(), null, null, null, null, getLoadMode(), SegmentVersion.v1, null,
         UPDATED_BLOOM_FILTER_COLUMNS, getTaskConfig(), null, null);
-
-    updateTableConfiguration();
 
     sendPostRequest(_controllerBaseApiUrl + "/tables/mytable/segments/reload?type=offline", null);
 
@@ -313,8 +307,6 @@ public class OfflineClusterIntegrationTest extends BaseClusterIntegrationTestSet
     } else {
       sendSchema(SCHEMA_WITH_MISSING_COLUMNS);
     }
-
-    updateTableConfiguration();
 
     // Trigger reload
     sendPostRequest(_controllerBaseApiUrl + "/tables/mytable/segments/reload?type=offline", null);
@@ -818,15 +810,30 @@ public class OfflineClusterIntegrationTest extends BaseClusterIntegrationTestSet
     testQuery(pql, Collections.singletonList(sql));
   }
 
-  @Override
-  protected boolean isUsingNewConfigFormat() {
-    return true;
-  }
-
   @Test
-  @Override
-  public void testSqlQueriesFromQueryFile()
+  public void testCaseInsensitivity()
       throws Exception {
-    super.testQueriesFromQueryFile();
+    addSchema(getSchemaFile(), getTableName());
+    List<String> queries = new ArrayList<>();
+    int daysSinceEpoch = 16138;
+    long secondsSinceEpoch = 16138 * 24 * 60 * 60;
+    queries.add("SELECT * FROM mytable");
+    queries.add("SELECT DaysSinceEpoch, timeConvert(DaysSinceEpoch,'DAYS','SECONDS') FROM mytable");
+    queries.add(
+        "SELECT DaysSinceEpoch, timeConvert(DaysSinceEpoch,'DAYS','SECONDS') FROM mytable order by DaysSinceEpoch limit 10000");
+    queries.add(
+        "SELECT DaysSinceEpoch, timeConvert(DaysSinceEpoch,'DAYS','SECONDS') FROM mytable order by timeConvert(DaysSinceEpoch,'DAYS','SECONDS') DESC limit 10000");
+    queries.add("SELECT count(*) FROM mytable WHERE DaysSinceEpoch = " + daysSinceEpoch);
+    queries
+        .add("SELECT count(*) FROM mytable WHERE timeConvert(DaysSinceEpoch,'DAYS','SECONDS') = " + secondsSinceEpoch);
+    queries.add("SELECT count(*) FROM mytable WHERE timeConvert(DaysSinceEpoch,'DAYS','SECONDS') = " + 16138);
+    queries.add("SELECT MAX(timeConvert(DaysSinceEpoch,'DAYS','SECONDS')) FROM mytable");
+    queries.add("SELECT COUNT(*) FROM mytable GROUP BY dateTimeConvert(DaysSinceEpoch,'1:DAYS:EPOCH','1:HOURS:EPOCH','1:HOURS')");
+
+    for (String query : queries) {
+      query = query.replace("mytable", "MYTABLE").replace("DaysSinceEpoch", "DAYSSinceEpOch");
+      JsonNode response = postQuery(query);
+      Assert.assertTrue(response.get("numSegmentsProcessed").asLong() >= 1, query + " failed");
+    }
   }
 }

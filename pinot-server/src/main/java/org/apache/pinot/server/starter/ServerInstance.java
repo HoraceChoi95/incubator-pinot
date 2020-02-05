@@ -18,20 +18,22 @@
  */
 package org.apache.pinot.server.starter;
 
+import com.google.common.base.Preconditions;
+import com.yammer.metrics.core.MetricsRegistry;
+import java.util.HashSet;
+import java.util.Set;
 import java.util.concurrent.atomic.LongAccumulator;
-import javax.annotation.Nonnull;
-import org.apache.commons.configuration.Configuration;
-import org.apache.helix.ZNRecord;
-import org.apache.helix.store.zk.ZkHelixPropertyStore;
+import org.apache.helix.HelixManager;
+import org.apache.pinot.common.metrics.MetricsHelper;
 import org.apache.pinot.common.metrics.ServerMetrics;
 import org.apache.pinot.core.data.manager.InstanceDataManager;
+import org.apache.pinot.core.operator.transform.function.TransformFunction;
+import org.apache.pinot.core.operator.transform.function.TransformFunctionFactory;
 import org.apache.pinot.core.query.executor.QueryExecutor;
 import org.apache.pinot.core.query.scheduler.QueryScheduler;
 import org.apache.pinot.core.query.scheduler.QuerySchedulerFactory;
+import org.apache.pinot.core.transport.QueryServer;
 import org.apache.pinot.server.conf.ServerConf;
-import org.apache.pinot.server.request.ScheduledRequestHandler;
-import org.apache.pinot.transport.netty.NettyServer;
-import org.apache.pinot.transport.netty.NettyServer.RequestHandlerFactory;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -43,45 +45,70 @@ import org.slf4j.LoggerFactory;
 public class ServerInstance {
   private static final Logger LOGGER = LoggerFactory.getLogger(ServerInstance.class);
 
-  private ServerConf _serverConf;
-  private ServerMetrics _serverMetrics;
-  private InstanceDataManager _instanceDataManager;
-  private QueryExecutor _queryExecutor;
-  private QueryScheduler _queryScheduler;
-  private ScheduledRequestHandler _requestHandler;
-  private NettyServer _nettyServer;
-  private LongAccumulator _latestQueryTime;
+  private final ServerMetrics _serverMetrics;
+  private final InstanceDataManager _instanceDataManager;
+  private final QueryExecutor _queryExecutor;
+  private final LongAccumulator _latestQueryTime;
+  private final QueryScheduler _queryScheduler;
+  private final QueryServer _queryServer;
 
   private boolean _started = false;
 
-  public void init(@Nonnull ServerConf serverConf, @Nonnull ZkHelixPropertyStore<ZNRecord> propertyStore)
+  public ServerInstance(ServerConf serverConf, HelixManager helixManager)
       throws Exception {
     LOGGER.info("Initializing server instance");
 
-    _serverConf = serverConf;
-    ServerBuilder serverBuilder = new ServerBuilder(_serverConf, propertyStore);
-    _serverMetrics = serverBuilder.getServerMetrics();
-    _instanceDataManager = serverBuilder.buildInstanceDataManager();
-    _queryExecutor = serverBuilder.buildQueryExecutor(_instanceDataManager);
+    LOGGER.info("Initializing server metrics");
+    MetricsHelper.initializeMetrics(serverConf.getMetricsConfig());
+    MetricsRegistry metricsRegistry = new MetricsRegistry();
+    MetricsHelper.registerMetricsRegistry(metricsRegistry);
+    _serverMetrics =
+        new ServerMetrics(serverConf.getMetricsPrefix(), metricsRegistry, !serverConf.emitTableLevelMetrics());
+    _serverMetrics.initializeGlobalMeters();
+
+    String instanceDataManagerClassName = serverConf.getInstanceDataManagerClassName();
+    LOGGER.info("Initializing instance data manager of class: {}", instanceDataManagerClassName);
+    _instanceDataManager = (InstanceDataManager) Class.forName(instanceDataManagerClassName).newInstance();
+    _instanceDataManager.init(serverConf.getInstanceDataManagerConfig(), helixManager, _serverMetrics);
+
+    String queryExecutorClassName = serverConf.getQueryExecutorClassName();
+    LOGGER.info("Initializing query executor of class: {}", queryExecutorClassName);
+    _queryExecutor = (QueryExecutor) Class.forName(queryExecutorClassName).newInstance();
+    _queryExecutor.init(serverConf.getQueryExecutorConfig(), _instanceDataManager, _serverMetrics);
+
+    LOGGER.info("Initializing query scheduler");
     _latestQueryTime = new LongAccumulator(Long::max, 0);
-    _queryScheduler = serverBuilder.buildQueryScheduler(_queryExecutor, _latestQueryTime);
-    _requestHandler = new ScheduledRequestHandler(_queryScheduler, _serverMetrics);
-    _nettyServer = serverBuilder.buildNettyServer(new RequestHandlerFactory() {
-      @Override
-      public NettyServer.RequestHandler createNewRequestHandler() {
-        return _requestHandler;
+    _queryScheduler =
+        QuerySchedulerFactory.create(serverConf.getSchedulerConfig(), _queryExecutor, _serverMetrics, _latestQueryTime);
+
+    int queryServerPort = serverConf.getNettyConfig().getPort();
+    LOGGER.info("Initializing query server on port: {}", queryServerPort);
+    _queryServer = new QueryServer(queryServerPort, _queryScheduler, _serverMetrics);
+
+    LOGGER.info("Initializing transform functions");
+    Set<Class<TransformFunction>> transformFunctionClasses = new HashSet<>();
+    for (String transformFunctionClassName : serverConf.getTransformFunctions()) {
+      try {
+        //noinspection unchecked
+        transformFunctionClasses.add((Class<TransformFunction>) Class.forName(transformFunctionClassName));
+      } catch (ClassNotFoundException e) {
+        throw new RuntimeException("Failed to find transform function class: " + transformFunctionClassName);
       }
-    });
+    }
+    TransformFunctionFactory.init(transformFunctionClasses);
 
     LOGGER.info("Finish initializing server instance");
   }
 
-  public void start() {
-    LOGGER.info("Starting server instance");
+  public synchronized void start() {
+    // This method is called when Helix starts a new ZK session, and can be called multiple times. We only need to start
+    // the server instance once, and simply ignore the following invocations.
     if (_started) {
-      LOGGER.info("Server instance is already started");
+      LOGGER.info("Server instance is already running, skipping the start");
       return;
     }
+
+    LOGGER.info("Starting server instance");
 
     LOGGER.info("Starting instance data manager");
     _instanceDataManager.start();
@@ -89,22 +116,19 @@ public class ServerInstance {
     _queryExecutor.start();
     LOGGER.info("Starting query scheduler");
     _queryScheduler.start();
-    LOGGER.info("Starting netty server");
-    new Thread(_nettyServer).start();
+    LOGGER.info("Starting query server");
+    _queryServer.start();
 
     _started = true;
     LOGGER.info("Finish starting server instance");
   }
 
-  public void shutDown() {
+  public synchronized void shutDown() {
+    Preconditions.checkState(_started, "Server instance is not running");
     LOGGER.info("Shutting down server instance");
-    if (!_started) {
-      LOGGER.info("Server instance is not running");
-      return;
-    }
 
-    LOGGER.info("Shutting down netty server");
-    _nettyServer.shutdownGracefully();
+    LOGGER.info("Shutting down query server");
+    _queryServer.shutDown();
     LOGGER.info("Shutting down query scheduler");
     _queryScheduler.stop();
     LOGGER.info("Shutting down query executor");
@@ -126,13 +150,5 @@ public class ServerInstance {
 
   public long getLatestQueryTime() {
     return _latestQueryTime.get();
-  }
-
-  public void resetQueryScheduler(String schedulerName) {
-    Configuration schedulerConfig = _serverConf.getSchedulerConfig();
-    schedulerConfig.setProperty(QuerySchedulerFactory.ALGORITHM_NAME_CONFIG_KEY, schedulerName);
-    _queryScheduler = QuerySchedulerFactory.create(schedulerConfig, _queryExecutor, _serverMetrics, _latestQueryTime);
-    _queryScheduler.start();
-    _requestHandler.setScheduler(_queryScheduler);
   }
 }

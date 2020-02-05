@@ -21,6 +21,8 @@ import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Map;
 import java.util.Set;
+import org.apache.pinot.thirdeye.datalayer.dto.DetectionAlertConfigDTO;
+import org.apache.pinot.thirdeye.detection.ConfigUtils;
 import org.apache.pinot.thirdeye.detection.alert.DetectionAlertFilterNotification;
 
 import static org.apache.pinot.thirdeye.detection.alert.scheme.DetectionEmailAlerter.*;
@@ -37,17 +39,18 @@ public class AlertFilterUtils {
   public static final Set<String> PROP_CC_VALUE = new HashSet<>(Arrays.asList("cctest@example.com", "cctest@example.org"));
   public static final Set<String> PROP_BCC_VALUE = new HashSet<>(Arrays.asList("bcctest@example.com", "bcctest@example.org"));
 
-  static DetectionAlertFilterNotification makeEmailNotifications() {
-    return makeEmailNotifications(new HashSet<String>());
+  static DetectionAlertFilterNotification makeEmailNotifications(DetectionAlertConfigDTO config) {
+    return makeEmailNotifications(config, new HashSet<String>());
   }
 
-  static DetectionAlertFilterNotification makeEmailNotifications(Set<String> toRecipients) {
+  static DetectionAlertFilterNotification makeEmailNotifications(DetectionAlertConfigDTO config, Set<String> toRecipients) {
     Set<String> recipients = new HashSet<>(toRecipients);
     recipients.addAll(PROP_TO_VALUE);
-    return makeEmailNotifications(recipients, PROP_CC_VALUE, PROP_BCC_VALUE);
+    return makeEmailNotifications(config, recipients, PROP_CC_VALUE, PROP_BCC_VALUE);
   }
 
-  static DetectionAlertFilterNotification makeEmailNotifications(Set<String> toRecipients, Set<String> ccRecipients, Set<String> bccRecipients) {
+  static DetectionAlertFilterNotification makeEmailNotifications(DetectionAlertConfigDTO config,
+      Set<String> toRecipients, Set<String> ccRecipients, Set<String> bccRecipients) {
     Map<String, Object> alertProps = new HashMap<>();
 
     Map<String, Set<String>> recipients = new HashMap<>();
@@ -59,6 +62,9 @@ public class AlertFilterUtils {
     emailRecipients.put(PROP_RECIPIENTS, recipients);
 
     alertProps.put(PROP_EMAIL_SCHEME, emailRecipients);
-    return new DetectionAlertFilterNotification(alertProps);
+
+    DetectionAlertConfigDTO subsConfig = SubscriptionUtils.makeChildSubscriptionConfig(config, alertProps, config.getReferenceLinks());
+
+    return new DetectionAlertFilterNotification(subsConfig);
   }
 }

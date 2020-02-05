@@ -23,7 +23,6 @@ import java.text.DecimalFormat;
 import java.text.DecimalFormatSymbols;
 import java.util.ArrayList;
 import java.util.Collection;
-import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Iterator;
@@ -35,9 +34,9 @@ import java.util.Set;
 import javax.annotation.Nullable;
 import org.apache.pinot.common.request.SelectionSort;
 import org.apache.pinot.common.request.transform.TransformExpressionTree;
-import org.apache.pinot.common.response.ServerInstance;
+import org.apache.pinot.common.response.broker.ResultTable;
 import org.apache.pinot.common.response.broker.SelectionResults;
-import org.apache.pinot.common.utils.BytesUtils;
+import org.apache.pinot.spi.utils.BytesUtils;
 import org.apache.pinot.common.utils.DataSchema;
 import org.apache.pinot.common.utils.DataTable;
 import org.apache.pinot.core.common.datatable.DataTableBuilder;
@@ -87,24 +86,51 @@ public class SelectionOperatorUtils {
       ThreadLocal.withInitial(() -> new DecimalFormat(DOUBLE_PATTERN, DECIMAL_FORMAT_SYMBOLS));
 
   /**
-   * Extracts the expressions from a selection query, expands {@code 'SELECT *'} to all physical columns if applies.
-   * <p>For selection order-by queries, order-by expressions will be put at the front. The expressions returned are
-   * deduplicated.
-   * <NOTE>DO NOT change the order of the expressions returned because broker relies on that to process the query.
+   * Extracts the expressions from a selection-only query, expands {@code 'SELECT *'} to all physical columns if
+   * applies.
+   * <p>NOTE: DO NOT change the order of the expressions returned because broker relies on that to process the query.
    */
   public static List<TransformExpressionTree> extractExpressions(List<String> selectionColumns,
-      IndexSegment indexSegment, @Nullable List<SelectionSort> sortSequence) {
-    Set<TransformExpressionTree> expressionSet = new HashSet<>();
-    List<TransformExpressionTree> expressions = new ArrayList<>();
+      IndexSegment indexSegment) {
+    if (selectionColumns.size() == 1 && selectionColumns.get(0).equals("*")) {
+      // For 'SELECT *', sort all physical columns so that the order is deterministic
+      selectionColumns = new ArrayList<>(indexSegment.getPhysicalColumnNames());
+      selectionColumns.sort(null);
 
-    if (sortSequence != null) {
-      for (SelectionSort selectionSort : sortSequence) {
-        TransformExpressionTree orderByExpression =
-            TransformExpressionTree.compileToExpressionTree(selectionSort.getColumn());
-        if (expressionSet.add(orderByExpression)) {
-          expressions.add(orderByExpression);
+      List<TransformExpressionTree> expressions = new ArrayList<>(selectionColumns.size());
+      for (String selectionColumn : selectionColumns) {
+        expressions.add(new TransformExpressionTree(new IdentifierAstNode(selectionColumn)));
+      }
+      return expressions;
+    } else {
+      // Note: selection expressions have been standardized during query compilation
+      Set<String> selectionColumnSet = new HashSet<>();
+      List<TransformExpressionTree> expressions = new ArrayList<>(selectionColumns.size());
+      for (String selectionColumn : selectionColumns) {
+        if (selectionColumnSet.add(selectionColumn)) {
+          expressions.add(TransformExpressionTree.compileToExpressionTree(selectionColumn));
         }
       }
+      return expressions;
+    }
+  }
+
+  /**
+   * Extracts the expressions from a selection order-by query, expands {@code 'SELECT *'} to all physical columns if
+   * applies.
+   * <p>Order-by expressions will be put at the front. The expressions returned are deduplicated.
+   * <p>NOTE: DO NOT change the order of the expressions returned because broker relies on that to process the query.
+   */
+  public static List<TransformExpressionTree> extractExpressions(List<String> selectionColumns,
+      IndexSegment indexSegment, List<SelectionSort> sortSequence) {
+    Set<String> columnSet = new HashSet<>();
+    List<TransformExpressionTree> expressions = new ArrayList<>();
+
+    // NOTE: order-by expressions have been standardized and deduplicated during query compilation
+    for (SelectionSort selectionSort : sortSequence) {
+      String orderByColumn = selectionSort.getColumn();
+      columnSet.add(orderByColumn);
+      expressions.add(TransformExpressionTree.compileToExpressionTree(orderByColumn));
     }
 
     if (selectionColumns.size() == 1 && selectionColumns.get(0).equals("*")) {
@@ -113,17 +139,15 @@ public class SelectionOperatorUtils {
       selectionColumns.sort(null);
 
       for (String selectionColumn : selectionColumns) {
-        TransformExpressionTree selectionExpression =
-            new TransformExpressionTree(new IdentifierAstNode(selectionColumn));
-        if (expressionSet.add(selectionExpression)) {
-          expressions.add(selectionExpression);
+        if (!columnSet.contains(selectionColumn)) {
+          expressions.add(new TransformExpressionTree(new IdentifierAstNode(selectionColumn)));
         }
       }
     } else {
+      // Note: selection expressions have been standardized during query compilation
       for (String selectionColumn : selectionColumns) {
-        TransformExpressionTree selectionExpression = TransformExpressionTree.compileToExpressionTree(selectionColumn);
-        if (expressionSet.add(selectionExpression)) {
-          expressions.add(selectionExpression);
+        if (columnSet.add(selectionColumn)) {
+          expressions.add(TransformExpressionTree.compileToExpressionTree(selectionColumn));
         }
       }
     }
@@ -158,6 +182,25 @@ public class SelectionOperatorUtils {
     } else {
       return selectionColumns;
     }
+  }
+
+  /**
+   * Constructs the final selection DataSchema based on the order of selection columns (data schema can have a different order, depending on order by clause)
+   * @param dataSchema data schema used for execution and ordering
+   * @param selectionColumns the selection order
+   * @return data schema for final results
+   */
+  public static DataSchema getResultTableDataSchema(DataSchema dataSchema, List<String> selectionColumns) {
+    int numColumns = selectionColumns.size();
+    Map<String, DataSchema.ColumnDataType> columnNameToDataType = new HashMap<>();
+    DataSchema.ColumnDataType[] finalColumnDataTypes = new DataSchema.ColumnDataType[numColumns];
+    for (int i = 0; i < numColumns; i++) {
+      columnNameToDataType.put(dataSchema.getColumnName(i), dataSchema.getColumnDataType(i));
+    }
+    for (int i = 0; i < numColumns; i++) {
+      finalColumnDataTypes[i] = columnNameToDataType.get(selectionColumns.get(i));
+    }
+    return new DataSchema(selectionColumns.toArray(new String[0]), finalColumnDataTypes);
   }
 
   /**
@@ -350,17 +393,12 @@ public class SelectionOperatorUtils {
   }
 
   /**
-   * Reduce a collection of {@link DataTable}s to selection rows for selection queries without <code>ORDER BY</code>.
+   * Reduces a collection of {@link DataTable}s to selection rows for selection queries without <code>ORDER BY</code>.
    * (Broker side)
-   *
-   * @param selectionResults {@link Map} from {@link ServerInstance} to {@link DataTable}.
-   * @param selectionSize size of the selection.
-   * @return reduced results.
    */
-  public static List<Serializable[]> reduceWithoutOrdering(Map<ServerInstance, DataTable> selectionResults,
-      int selectionSize) {
+  public static List<Serializable[]> reduceWithoutOrdering(Collection<DataTable> dataTables, int selectionSize) {
     List<Serializable[]> rows = new ArrayList<>(selectionSize);
-    for (DataTable dataTable : selectionResults.values()) {
+    for (DataTable dataTable : dataTables) {
       int numRows = dataTable.getNumberOfRows();
       for (int rowId = 0; rowId < numRows; rowId++) {
         if (rows.size() < selectionSize) {
@@ -393,6 +431,22 @@ public class SelectionOperatorUtils {
       }
     }
     return new SelectionResults(selectionColumns, rows);
+  }
+
+  /**
+   * Render the selection rows to a {@link ResultTable} object
+   * for selection queries without <code>ORDER BY</code>
+   * <p>{@link ResultTable} object will be used to set in the broker response.
+   * <p>Should be called after method "reduceWithoutOrdering()".
+   *
+   * @param rows selection rows.
+   * @param dataSchema data schema.
+   * @return {@link ResultTable} object results.
+   */
+  public static ResultTable renderResultTableWithoutOrdering(List<Serializable[]> rows, DataSchema dataSchema) {
+    List<Object[]> resultRows = new ArrayList<>(rows.size());
+    resultRows.addAll(rows);
+    return new ResultTable(dataSchema, resultRows);
   }
 
   /**
@@ -500,7 +554,7 @@ public class SelectionOperatorUtils {
           length = ints.length;
           formattedValue = new String[length];
           for (int i = 0; i < length; i++) {
-            formattedValue[i] = longFormat.format((long) ints[i]);
+            formattedValue[i] = longFormat.format(ints[i]);
           }
         } else {
           long[] longs = (long[]) value;
@@ -544,7 +598,7 @@ public class SelectionOperatorUtils {
           length = floats.length;
           formattedValue = new String[length];
           for (int i = 0; i < length; i++) {
-            formattedValue[i] = doubleFormat.format((double) floats[i]);
+            formattedValue[i] = doubleFormat.format(floats[i]);
           }
           return formattedValue;
         } else {
@@ -577,44 +631,6 @@ public class SelectionOperatorUtils {
     } else if (queue.comparator().compare(queue.peek(), value) < 0) {
       queue.poll();
       queue.offer(value);
-    }
-  }
-
-  /**
-   * Helper Comparator class to compare rows.
-   * <p>Two arguments are expected to construct the comparator:
-   * <ul>
-   *   <li>
-   *     Value indices: an array of column indices in each row where the values need to be compared (only the
-   *     single-value order-by columns need to be compared)
-   *   </li>
-   *   <li>
-   *     Value comparators: an array of Comparator, where each element is the Comparator for the corresponding column in
-   *     the value indices array
-   *   </li>
-   * </ul>
-   */
-  public static class RowComparator implements Comparator<Serializable[]> {
-    private final int[] _valueIndices;
-    private final Comparator[] _valueComparators;
-
-    public RowComparator(int[] valueIndices, Comparator[] valueComparators) {
-      _valueIndices = valueIndices;
-      _valueComparators = valueComparators;
-    }
-
-    @SuppressWarnings("unchecked")
-    @Override
-    public int compare(Serializable[] o1, Serializable[] o2) {
-      int numValuesToCompare = _valueIndices.length;
-      for (int i = 0; i < numValuesToCompare; i++) {
-        int valueIndex = _valueIndices[i];
-        int result = _valueComparators[i].compare(o1[valueIndex], o2[valueIndex]);
-        if (result != 0) {
-          return result;
-        }
-      }
-      return 0;
     }
   }
 }

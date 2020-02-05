@@ -41,7 +41,16 @@ public interface AggregationFunction<IntermediateResult, FinalResult extends Com
   /**
    * Returns the result column name for the given aggregation column, e.g. 'SUM(foo)' -> 'sum_foo'.
    */
-  String getColumnName(String column);
+  default String getColumnName(String column) {
+    return getType().getName() + "_" + column;
+  }
+
+  /**
+   * Returns the column name to be used in the data schema of results. e.g. 'MINMAXRANGEMV( foo)' -> 'minmaxrangemv(foo)', 'PERCENTILE75(bar)' -> 'percentile75(bar)'
+   */
+  default String getResultColumnName(String column) {
+    return getType().getName().toLowerCase() + "(" + column + ")";
+  }
 
   /**
    * Accepts an aggregation function visitor to visit.
@@ -106,6 +115,12 @@ public interface AggregationFunction<IntermediateResult, FinalResult extends Com
    * <p>This column data type is used for transferring data in data table.
    */
   ColumnDataType getIntermediateResultColumnType();
+
+  /**
+   * Returns the {@link ColumnDataType} of the final result.
+   * <p>This column data type is used for constructing the result table</p>
+   */
+  ColumnDataType getFinalResultColumnType();
 
   /**
    * Extracts the final result used in the broker response from the given intermediate result.

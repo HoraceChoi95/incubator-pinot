@@ -19,9 +19,9 @@
 package org.apache.pinot.core.operator.filter.predicate;
 
 import it.unimi.dsi.fastutil.ints.IntSet;
-import org.apache.pinot.common.data.FieldSpec;
-import org.apache.pinot.common.utils.BytesUtils;
-import org.apache.pinot.common.utils.primitive.ByteArray;
+import org.apache.pinot.spi.data.FieldSpec;
+import org.apache.pinot.spi.utils.BytesUtils;
+import org.apache.pinot.spi.utils.ByteArray;
 import org.apache.pinot.core.common.Predicate;
 import org.apache.pinot.core.common.predicate.RangePredicate;
 import org.apache.pinot.core.realtime.impl.dictionary.BaseMutableDictionary;
@@ -79,7 +79,7 @@ public class RangePredicateEvaluatorFactory {
     }
   }
 
-  private static final class OfflineDictionaryBasedRangePredicateEvaluator extends BaseDictionaryBasedPredicateEvaluator {
+  public static final class OfflineDictionaryBasedRangePredicateEvaluator extends BaseDictionaryBasedPredicateEvaluator {
     final int _startDictId;
     // Exclusive
     final int _endDictId;
@@ -127,6 +127,14 @@ public class RangePredicateEvaluatorFactory {
       } else if (dictionary.length() == _numMatchingDictIds) {
         _alwaysTrue = true;
       }
+    }
+
+    public int getStartDictId() {
+      return _startDictId;
+    }
+
+    public int getEndDictId() {
+      return _endDictId;
     }
 
     @Override

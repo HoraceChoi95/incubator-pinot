@@ -27,11 +27,11 @@ import java.util.Map;
 import javax.annotation.Nullable;
 import org.apache.pinot.common.config.ColumnPartitionConfig;
 import org.apache.pinot.common.config.SegmentPartitionConfig;
-import org.apache.pinot.common.data.FieldSpec;
-import org.apache.pinot.common.data.Schema;
+import org.apache.pinot.spi.data.FieldSpec;
+import org.apache.pinot.spi.data.Schema;
 import org.apache.pinot.common.data.StarTreeIndexSpec;
-import org.apache.pinot.common.data.TimeFieldSpec;
-import org.apache.pinot.common.data.TimeGranularitySpec;
+import org.apache.pinot.spi.data.TimeFieldSpec;
+import org.apache.pinot.spi.data.TimeGranularitySpec;
 import org.apache.pinot.common.metrics.ServerGauge;
 import org.apache.pinot.common.metrics.ServerMetrics;
 import org.apache.pinot.core.data.recordtransformer.CompositeTransformer;
@@ -59,8 +59,8 @@ public class RealtimeSegmentConverter {
 
   public RealtimeSegmentConverter(MutableSegmentImpl realtimeSegment, String outputPath, Schema schema,
       String tableName, String timeColumnName, String segmentName, String sortedColumn,
-      List<String> invertedIndexColumns, List<String> noDictionaryColumns,
-      List<String> varLengthDictionaryColumns, StarTreeIndexSpec starTreeIndexSpec, boolean nullHandlingEnabled) {
+      List<String> invertedIndexColumns, List<String> noDictionaryColumns, List<String> varLengthDictionaryColumns,
+      StarTreeIndexSpec starTreeIndexSpec, boolean nullHandlingEnabled) {
     if (new File(outputPath).exists()) {
       throw new IllegalAccessError("path already exists:" + outputPath);
     }
@@ -68,7 +68,7 @@ public class RealtimeSegmentConverter {
     this.realtimeSegmentImpl = realtimeSegment;
     this.outputPath = outputPath;
     this.invertedIndexColumns = new ArrayList<>(invertedIndexColumns);
-    if (sortedColumn != null && this.invertedIndexColumns.contains(sortedColumn)) {
+    if (sortedColumn != null) {
       this.invertedIndexColumns.remove(sortedColumn);
     }
     this.dataSchema = getUpdatedSchema(schema);
@@ -144,7 +144,7 @@ public class RealtimeSegmentConverter {
     driver.init(genConfig, dataSource, CompositeTransformer.getPassThroughTransformer());
     driver.build();
 
-    if (segmentPartitionConfig != null && segmentPartitionConfig.getColumnPartitionMap() != null) {
+    if (segmentPartitionConfig != null) {
       Map<String, ColumnPartitionConfig> columnPartitionMap = segmentPartitionConfig.getColumnPartitionMap();
       for (String columnName : columnPartitionMap.keySet()) {
         int numPartitions = driver.getSegmentStats().getColumnProfileFor(columnName).getPartitions().size();

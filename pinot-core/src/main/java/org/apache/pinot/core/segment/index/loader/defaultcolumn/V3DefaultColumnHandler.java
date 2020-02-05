@@ -20,12 +20,13 @@ package org.apache.pinot.core.segment.index.loader.defaultcolumn;
 
 import com.google.common.base.Preconditions;
 import java.io.File;
-import org.apache.pinot.common.data.FieldSpec;
-import org.apache.pinot.common.data.Schema;
+import org.apache.pinot.spi.data.FieldSpec;
+import org.apache.pinot.spi.data.Schema;
 import org.apache.pinot.core.segment.creator.impl.V1Constants;
 import org.apache.pinot.core.segment.index.SegmentMetadataImpl;
 import org.apache.pinot.core.segment.index.loader.LoaderUtils;
 import org.apache.pinot.core.segment.index.loader.V3RemoveIndexException;
+import org.apache.pinot.core.segment.index.loader.V3UpdateIndexException;
 import org.apache.pinot.core.segment.store.ColumnIndexType;
 import org.apache.pinot.core.segment.store.SegmentDirectory;
 import org.slf4j.Logger;
@@ -50,7 +51,12 @@ public class V3DefaultColumnHandler extends BaseDefaultColumnHandler {
 
     // For V3 segment format, only support ADD action
     // For UPDATE and REMOVE action, throw exception to drop and re-download the segment
-    if (!action.isAddAction()) {
+    if (action.isUpdateAction()) {
+      throw new V3UpdateIndexException(
+          "Default value indices for column: " + column + " cannot be updated for V3 format segment.");
+    }
+
+    if (action.isRemoveAction()) {
       throw new V3RemoveIndexException(
           "Default value indices for column: " + column + " cannot be removed for V3 format segment.");
     }

@@ -18,7 +18,7 @@
  */
 package org.apache.pinot.core.query.aggregation.function;
 
-import org.apache.pinot.common.data.FieldSpec.DataType;
+import org.apache.pinot.spi.data.FieldSpec.DataType;
 import org.apache.pinot.common.function.AggregationFunctionType;
 import org.apache.pinot.common.utils.DataSchema.ColumnDataType;
 import org.apache.pinot.core.common.BlockValSet;
@@ -35,11 +35,6 @@ public class MinMaxRangeAggregationFunction implements AggregationFunction<MinMa
   @Override
   public AggregationFunctionType getType() {
     return AggregationFunctionType.MINMAXRANGE;
-  }
-
-  @Override
-  public String getColumnName(String column) {
-    return AggregationFunctionType.MINMAXRANGE.getName() + "_" + column;
   }
 
   @Override
@@ -186,6 +181,11 @@ public class MinMaxRangeAggregationFunction implements AggregationFunction<MinMa
   @Override
   public ColumnDataType getIntermediateResultColumnType() {
     return ColumnDataType.OBJECT;
+  }
+
+  @Override
+  public ColumnDataType getFinalResultColumnType() {
+    return ColumnDataType.DOUBLE;
   }
 
   @Override

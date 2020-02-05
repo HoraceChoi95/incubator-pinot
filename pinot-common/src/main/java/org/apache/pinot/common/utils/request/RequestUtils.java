@@ -53,8 +53,6 @@ import org.apache.pinot.pql.parsers.pql2.ast.StringLiteralAstNode;
 
 
 public class RequestUtils {
-  private static String DELIMTER = "\t\t";
-
   private RequestUtils() {
   }
 
@@ -322,5 +320,34 @@ public class RequestUtils {
     } else {
       throw new IllegalStateException("Cannot get expression from " + astNode.getClass().getSimpleName());
     }
+  }
+
+  public static String prettyPrint(Expression expression) {
+    if (expression == null) {
+      return "null";
+    }
+    if (expression.getIdentifier() != null) {
+      return expression.getIdentifier().getName();
+    }
+    if (expression.getLiteral() != null) {
+      if (expression.getLiteral().isSetLongValue()) {
+        return Long.toString(expression.getLiteral().getLongValue());
+      }
+    }
+    if (expression.getFunctionCall() != null) {
+      String res = expression.getFunctionCall().getOperator() + "(";
+      boolean isFirstParam = true;
+      for (Expression operand : expression.getFunctionCall().getOperands()) {
+        if (!isFirstParam) {
+          res += ", ";
+        } else {
+          isFirstParam = false;
+        }
+        res += prettyPrint(operand);
+      }
+      res += ")";
+      return res;
+    }
+    return null;
   }
 }

@@ -59,6 +59,7 @@ import org.apache.pinot.thirdeye.common.dimension.DimensionMap;
 import org.apache.pinot.thirdeye.common.time.TimeGranularity;
 import org.apache.pinot.thirdeye.common.time.TimeSpec;
 import org.apache.pinot.thirdeye.dashboard.ThirdEyeDashboardConfiguration;
+import org.apache.pinot.thirdeye.datalayer.bao.DatasetConfigManager;
 import org.apache.pinot.thirdeye.datalayer.bao.MetricConfigManager;
 import org.apache.pinot.thirdeye.datalayer.dto.DatasetConfigDTO;
 import org.apache.pinot.thirdeye.datalayer.dto.MetricConfigDTO;
@@ -73,6 +74,7 @@ import org.apache.pinot.thirdeye.datasource.ThirdEyeCacheRegistry;
 import org.apache.pinot.thirdeye.datasource.cache.MetricDataset;
 import org.apache.pinot.thirdeye.datasource.pinot.resultset.ThirdEyeResultSet;
 import org.apache.pinot.thirdeye.datasource.pinot.resultset.ThirdEyeResultSetGroup;
+import org.apache.pinot.thirdeye.rootcause.impl.MetricEntity;
 import org.joda.time.Period;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -95,6 +97,12 @@ public abstract class ThirdEyeUtils {
   private static final int DEFAULT_LOWER_BOUND_OF_RESULTSETGROUP_CACHE_SIZE_IN_MB = 100;
   private static final int DEFAULT_UPPER_BOUND_OF_RESULTSETGROUP_CACHE_SIZE_IN_MB = 8192;
 
+  // How much data to prefetch to warm up the cache
+  private static final long DEFAULT_CACHING_PERIOD_LOOKBACK = -1;
+  private static final long CACHING_PERIOD_LOOKBACK_DAILY = TimeUnit.DAYS.toMillis(90);
+  private static final long CACHING_PERIOD_LOOKBACK_HOURLY = TimeUnit.DAYS.toMillis(60);
+  // disable minute level cache warm up
+  private static final long CACHING_PERIOD_LOOKBACK_MINUTELY = -1;
 
   public static final long DETECTION_TASK_MAX_LOOKBACK_WINDOW = TimeUnit.DAYS.toMillis(7);
 
@@ -370,9 +378,19 @@ public abstract class ThirdEyeUtils {
     return datasetConfig;
   }
 
-  public static String getDatasetFromMetricFunction(MetricFunction metricFunction) {
-    MetricConfigDTO metricConfig = getMetricConfigFromId(metricFunction.getMetricId());
-    return metricConfig.getDataset();
+  public static List<DatasetConfigDTO> getDatasetConfigsFromMetricUrn(String metricUrn) {
+    DatasetConfigManager datasetConfigManager = DAORegistry.getInstance().getDatasetConfigDAO();
+    MetricEntity me = MetricEntity.fromURN(metricUrn);
+    MetricConfigDTO metricConfig = DAORegistry.getInstance().getMetricConfigDAO().findById(me.getId());
+    if (metricConfig == null) return new ArrayList<>();
+    if (!metricConfig.isDerived()) {
+      return Collections.singletonList(datasetConfigManager.findByDataset(metricConfig.getDataset()));
+    } else {
+      MetricExpression metricExpression = ThirdEyeUtils.getMetricExpressionFromMetricConfig(metricConfig);
+      List<MetricFunction> functions = metricExpression.computeMetricFunctions();
+      return functions.stream().map(
+          f -> datasetConfigManager.findByDataset(f.getDataset())).collect(Collectors.toList());
+    }
   }
 
   public static MetricConfigDTO getMetricConfigFromId(Long metricId) {
@@ -644,6 +662,27 @@ public abstract class ThirdEyeUtils {
     }
   }
 
+  public static long getCachingPeriodLookback(TimeGranularity granularity) {
+    long period;
+    switch (granularity.getUnit()) {
+      case DAYS:
+        // 90 days data for daily detection
+        period = CACHING_PERIOD_LOOKBACK_DAILY;
+        break;
+      case HOURS:
+        // 60 days data for hourly detection
+        period = CACHING_PERIOD_LOOKBACK_HOURLY;
+        break;
+      case MINUTES:
+        // disable minute level cache warmup by default.
+        period = CACHING_PERIOD_LOOKBACK_MINUTELY;
+        break;
+      default:
+        period = DEFAULT_CACHING_PERIOD_LOOKBACK;
+    }
+    return period;
+  }
+
   /**
    * Combine two components with comma separated.
    * For example, will combine "component1" and "component2" into "component1, component2".
@@ -661,5 +700,18 @@ public abstract class ThirdEyeUtils {
       components.add(component);
     }
     return String.join(",", components.stream().distinct().collect(Collectors.toList()));
+  }
+
+  /**
+   * Parse job name to get the detection id
+   * @param jobName
+   * @return
+   */
+  public static long getDetectionIdFromJobName(String jobName) {
+    String[] parts = jobName.split("_");
+    if (parts.length < 2) {
+      throw new IllegalArgumentException("Invalid job name: " + jobName);
+    }
+    return Long.parseLong(parts[1]);
   }
 }

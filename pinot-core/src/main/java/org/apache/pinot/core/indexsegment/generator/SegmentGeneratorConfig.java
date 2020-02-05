@@ -41,22 +41,20 @@ import org.apache.pinot.common.config.SegmentPartitionConfig;
 import org.apache.pinot.common.config.SegmentsValidationAndRetentionConfig;
 import org.apache.pinot.common.config.StarTreeIndexConfig;
 import org.apache.pinot.common.config.TableConfig;
-import org.apache.pinot.common.data.FieldSpec;
-import org.apache.pinot.common.data.FieldSpec.FieldType;
-import org.apache.pinot.common.data.Schema;
+import org.apache.pinot.spi.data.FieldSpec;
+import org.apache.pinot.spi.data.FieldSpec.FieldType;
+import org.apache.pinot.spi.data.Schema;
 import org.apache.pinot.common.data.StarTreeIndexSpec;
-import org.apache.pinot.common.data.TimeFieldSpec;
-import org.apache.pinot.common.data.TimeGranularitySpec;
-import org.apache.pinot.common.utils.JsonUtils;
-import org.apache.pinot.core.data.readers.CSVRecordReaderConfig;
-import org.apache.pinot.core.data.readers.FileFormat;
-import org.apache.pinot.core.data.readers.RecordReaderConfig;
+import org.apache.pinot.spi.data.TimeFieldSpec;
+import org.apache.pinot.spi.data.TimeGranularitySpec;
+import org.apache.pinot.spi.data.readers.RecordReaderFactory;
+import org.apache.pinot.spi.data.readers.FileFormat;
+import org.apache.pinot.spi.data.readers.RecordReaderConfig;
 import org.apache.pinot.core.io.compression.ChunkCompressorFactory;
 import org.apache.pinot.core.segment.name.FixedSegmentNameGenerator;
 import org.apache.pinot.core.segment.name.SegmentNameGenerator;
 import org.apache.pinot.core.segment.name.SimpleSegmentNameGenerator;
 import org.apache.pinot.core.startree.v2.builder.StarTreeV2BuilderConfig;
-import org.apache.pinot.core.util.AvroUtils;
 import org.apache.pinot.startree.hll.HllConfig;
 import org.joda.time.format.DateTimeFormat;
 import org.slf4j.Logger;
@@ -84,7 +82,7 @@ public class SegmentGeneratorConfig {
   private String _dataDir = null;
   private String _inputFilePath = null;
   private FileFormat _format = FileFormat.AVRO;
-  private String _recordReaderPath = null;
+  private String _recordReaderPath = null; //TODO: this should be renamed to recordReaderClass or even better removed
   private String _outDir = null;
   private boolean _overwrite = false;
   private String _tableName = null;
@@ -621,30 +619,7 @@ public class SegmentGeneratorConfig {
     return getQualifyingFields(FieldType.METRIC, true);
   }
 
-  /**
-   * @deprecated Load outside the class and use the setter for schema setting.
-   * @throws IOException
-   */
-  @Deprecated
-  public void loadConfigFiles()
-      throws IOException {
-    Schema schema;
-    if (_schemaFile != null) {
-      schema = Schema.fromFile(new File(_schemaFile));
-      setSchema(schema);
-    } else if (_format == FileFormat.AVRO) {
-      schema = AvroUtils.getPinotSchemaFromAvroDataFile(new File(_inputFilePath));
-      setSchema(schema);
-    } else {
-      throw new RuntimeException("Input format " + _format + " requires schema.");
-    }
-
-    if (_readerConfigFile != null) {
-      setReaderConfig(JsonUtils.fileToObject(new File(_readerConfigFile), CSVRecordReaderConfig.class));
-    }
-  }
-
-  @JsonIgnore
+   @JsonIgnore
   public String getDimensions() {
     return getQualifyingFields(FieldType.DIMENSION, true);
   }

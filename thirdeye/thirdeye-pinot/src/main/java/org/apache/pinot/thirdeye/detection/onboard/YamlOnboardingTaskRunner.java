@@ -46,6 +46,8 @@ import org.apache.pinot.thirdeye.detection.DefaultDataProvider;
 import org.apache.pinot.thirdeye.detection.DetectionPipeline;
 import org.apache.pinot.thirdeye.detection.DetectionPipelineLoader;
 import org.apache.pinot.thirdeye.detection.DetectionPipelineResult;
+import org.apache.pinot.thirdeye.detection.cache.builder.AnomaliesCacheBuilder;
+import org.apache.pinot.thirdeye.detection.cache.builder.TimeSeriesCacheBuilder;
 import org.apache.pinot.thirdeye.detection.yaml.DetectionConfigTuner;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -77,7 +79,7 @@ public class YamlOnboardingTaskRunner implements TaskRunner {
 
     TimeSeriesLoader timeseriesLoader =
         new DefaultTimeSeriesLoader(metricDAO, datasetDAO,
-            ThirdEyeCacheRegistry.getInstance().getQueryCache());
+            ThirdEyeCacheRegistry.getInstance().getQueryCache(), ThirdEyeCacheRegistry.getInstance().getTimeSeriesCache());
 
     AggregationLoader aggregationLoader =
         new DefaultAggregationLoader(metricDAO, datasetDAO,
@@ -85,7 +87,8 @@ public class YamlOnboardingTaskRunner implements TaskRunner {
             ThirdEyeCacheRegistry.getInstance().getDatasetMaxDataTimeCache());
 
     this.provider = new DefaultDataProvider(metricDAO, datasetDAO, eventDAO, this.anomalyDAO, this.evaluationDAO,
-        timeseriesLoader, aggregationLoader, this.loader);
+        timeseriesLoader, aggregationLoader, this.loader, TimeSeriesCacheBuilder.getInstance(),
+        AnomaliesCacheBuilder.getInstance());
   }
 
   @Override

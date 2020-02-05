@@ -19,16 +19,23 @@
 package org.apache.pinot.tools.admin.command;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import java.io.BufferedReader;
 import java.io.File;
+import java.io.FileReader;
 import java.io.IOException;
+import java.io.Reader;
+import java.net.URL;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Random;
 import org.apache.commons.io.FileUtils;
 import org.apache.pinot.common.utils.CommonConstants.Helix.TableType;
-import org.apache.pinot.common.utils.JsonUtils;
 import org.apache.pinot.common.utils.TenantRole;
+import org.apache.pinot.spi.ingestion.batch.IngestionJobLauncher;
+import org.apache.pinot.spi.ingestion.batch.spec.SegmentGenerationJobSpec;
+import org.apache.pinot.spi.utils.JsonUtils;
 import org.apache.pinot.tools.QuickstartTableRequest;
+import org.yaml.snakeyaml.Yaml;
 
 
 public class QuickstartRunner {
@@ -153,42 +160,29 @@ public class QuickstartRunner {
         .setInstances(number).setRole(TenantRole.BROKER).setExecute(true).execute();
   }
 
-  public void addSchema()
-      throws Exception {
-    for (QuickstartTableRequest request : _tableRequests) {
-      new AddSchemaCommand().setControllerPort(String.valueOf(_controllerPorts.get(0)))
-          .setSchemaFilePath(request.getSchemaFile().getAbsolutePath()).setExecute(true).execute();
-    }
-  }
-
   public void addTable()
       throws Exception {
     for (QuickstartTableRequest request : _tableRequests) {
-      new AddTableCommand().setFilePath(request.getTableRequestFile().getAbsolutePath())
+      new AddTableCommand().setSchemaFile(request.getSchemaFile().getAbsolutePath())
+          .setTableConfigFile(request.getTableRequestFile().getAbsolutePath())
           .setControllerPort(String.valueOf(_controllerPorts.get(0))).setExecute(true).execute();
     }
   }
 
-  public void buildSegment()
+  public void launchDataIngestionJob()
       throws Exception {
     for (QuickstartTableRequest request : _tableRequests) {
       if (request.getTableType() == TableType.OFFLINE) {
-        File tempDir = new File(_tempDir, request.getTableName() + "_segment");
-        new CreateSegmentCommand().setDataDir(request.getDataDir().getAbsolutePath())
-            .setFormat(request.getSegmentFileFormat()).setSchemaFile(request.getSchemaFile().getAbsolutePath())
-            .setTableName(request.getTableName())
-            .setSegmentName(request.getTableName() + "_" + System.currentTimeMillis())
-            .setOutDir(tempDir.getAbsolutePath()).execute();
-        _segmentDirs.add(tempDir.getAbsolutePath());
+        try (Reader reader = new BufferedReader(new FileReader(request.getIngestionJobFile().getAbsolutePath()))) {
+          SegmentGenerationJobSpec spec = new Yaml().loadAs(reader, SegmentGenerationJobSpec.class);
+          String inputDirURI = spec.getInputDirURI();
+          if (!new File(inputDirURI).exists()) {
+            URL resolvedInputDirURI = QuickstartRunner.class.getClassLoader().getResource(inputDirURI);
+            spec.setInputDirURI(resolvedInputDirURI.toURI().toString());
+          }
+          IngestionJobLauncher.runIngestionJob(spec);
+        }
       }
-    }
-  }
-
-  public void pushSegment()
-      throws Exception {
-    for (String segmentDir : _segmentDirs) {
-      new UploadSegmentCommand().setControllerPort(String.valueOf(_controllerPorts.get(0))).setSegmentDir(segmentDir)
-          .execute();
     }
   }
 

@@ -18,46 +18,28 @@
  */
 package org.apache.pinot.common.config;
 
-import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
-import org.apache.pinot.common.utils.EqualityUtils;
+import com.fasterxml.jackson.annotation.JsonCreator;
+import com.fasterxml.jackson.annotation.JsonProperty;
+import com.fasterxml.jackson.annotation.JsonPropertyDescription;
+import com.google.common.base.Preconditions;
+import javax.annotation.Nullable;
 
 
 /**
  * Class representing configurations related to realtime segment completion.
- *
  */
-@JsonIgnoreProperties(ignoreUnknown = true)
-public class CompletionConfig {
+public class CompletionConfig extends BaseJsonConfig {
 
-  @ConfigKey(value = "completionMode")
-  @ConfigDoc(value = "Mode to use when completing segment. DEFAULT for default strategy (build segment if segment is equivalent to the committed segment, else download). DOWNLOAD for always download the segment, never build.", mandatory = false)
-  private String _completionMode;
+  @JsonPropertyDescription("Mode to use when completing segment. DEFAULT for default strategy (build segment if segment is equivalent to the committed segment, else download). DOWNLOAD for always download the segment, never build.")
+  private final String _completionMode;
 
-  public String getCompletionMode() {
-    return _completionMode;
-  }
-
-  public void setCompletionMode(String completionMode) {
+  @JsonCreator
+  public CompletionConfig(@JsonProperty(value = "completionMode", required = true) String completionMode) {
+    Preconditions.checkArgument(completionMode != null, "'completionMode' must be configured");
     _completionMode = completionMode;
   }
 
-  @Override
-  public boolean equals(Object o) {
-    if (EqualityUtils.isSameReference(this, o)) {
-      return true;
-    }
-
-    if (EqualityUtils.isNullOrNotSameClass(this, o)) {
-      return false;
-    }
-
-    CompletionConfig that = (CompletionConfig) o;
-
-    return EqualityUtils.isEqual(_completionMode, that._completionMode);
-  }
-
-  @Override
-  public int hashCode() {
-    return EqualityUtils.hashCodeOf(_completionMode);
+  public String getCompletionMode() {
+    return _completionMode;
   }
 }

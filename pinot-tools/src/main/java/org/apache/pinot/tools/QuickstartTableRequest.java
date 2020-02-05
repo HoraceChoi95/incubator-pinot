@@ -20,19 +20,20 @@ package org.apache.pinot.tools;
 
 import java.io.File;
 import org.apache.pinot.common.utils.CommonConstants.Helix.TableType;
-import org.apache.pinot.core.data.readers.FileFormat;
+import org.apache.pinot.spi.data.readers.FileFormat;
 
 
 public class QuickstartTableRequest {
 
   File schemaFile;
   File tableRequestFile;
+  File ingestionJobFile;
   File dataDir;
   TableType tableType;
   String tableName;
   FileFormat segmentFileFormat = FileFormat.CSV;
 
-  public QuickstartTableRequest(String tableName, File schemaFile, File tableRequest, File dataDir,
+  public QuickstartTableRequest(String tableName, File schemaFile, File tableRequest, File ingestionJobFile, File dataDir,
       FileFormat segmentFileFormat) {
     this.tableName = tableName;
     this.schemaFile = schemaFile;
@@ -40,6 +41,7 @@ public class QuickstartTableRequest {
     this.tableRequestFile = tableRequest;
     tableType = TableType.OFFLINE;
     this.segmentFileFormat = segmentFileFormat;
+    this.ingestionJobFile = ingestionJobFile;
   }
 
   public QuickstartTableRequest(String tableName, File schemaFile, File tableRequest) {
@@ -71,6 +73,14 @@ public class QuickstartTableRequest {
 
   public void setTableRequestFile(File tableRequestFile) {
     this.tableRequestFile = tableRequestFile;
+  }
+
+  public File getIngestionJobFile() {
+    return ingestionJobFile;
+  }
+
+  public void setIngestionJobFile(File ingestionJobFile) {
+    this.ingestionJobFile = ingestionJobFile;
   }
 
   public File getDataDir() {

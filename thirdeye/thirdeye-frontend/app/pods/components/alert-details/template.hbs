@@ -3,16 +3,14 @@
   <div class="pull-right">
     {{#if isPreviewMode}}
       {{#if showDetails}}
-        {{#unless dataIsCurrent}}
-          {{bs-button
-            defaultText=(if showDetails "Rerun Preview" "Preview Alert")
-            disabled=disablePreviewButton
-            type="outline-primary"
-            buttonType="refresh"
-            onClick=(action "getPreview")
-            class="te-button te-button--cancel"
-          }}
-        {{/unless}}
+        {{bs-button
+          defaultText=(if showDetails "Rerun Preview" "Preview Alert")
+          disabled=disableRerunButton
+          type="outline-primary"
+          buttonType="refresh"
+          onClick=(action "getPreview")
+          class="te-button te-button--cancel"
+        }}
       {{else}}
         {{bs-button
           defaultText="Preview Alert"
@@ -53,6 +51,8 @@
             timePickerIncrement=pill.timePickerIncrement
             predefinedRanges=pill.predefinedRanges
             selectAction=(action "onRangeSelection")
+            triggerId='time-range-selector'
+            placeholder="Last 48 Hours"
           }}
 
 
@@ -226,6 +226,7 @@
                   axis=axis
                   zoom=zoom
                   legend=legend
+                  point=point
                   metricName=alertData.metric
                   alertName=alertData.detectionName
                   predefinedRanges=predefinedRanges
@@ -289,6 +290,8 @@
             timePickerIncrement=pill.timePickerIncrement
             predefinedRanges=pill.predefinedRanges
             selectAction=(action "onRangeSelection")
+            triggerId='time-range-selector'
+            placeholder="Last 48 Hours"
           }}
         {{/if}}
       {{/if}}
@@ -305,6 +308,8 @@
           timePickerIncrement=pill.timePickerIncrement
           predefinedRanges=pill.predefinedRanges
           selectAction=(action "onRangeSelection")
+          triggerId='time-range-selector'
+          placeholder="Last 48 Hours"
         }}
       {{/if}}
     {{/if}}

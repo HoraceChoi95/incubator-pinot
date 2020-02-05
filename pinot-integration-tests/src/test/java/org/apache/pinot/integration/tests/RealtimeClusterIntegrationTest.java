@@ -25,10 +25,7 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import org.apache.commons.io.FileUtils;
-import org.apache.pinot.common.data.Schema;
-import org.apache.pinot.core.realtime.impl.kafka.KafkaStarterUtils;
 import org.apache.pinot.util.TestUtils;
-import org.testng.Assert;
 import org.testng.annotations.AfterClass;
 import org.testng.annotations.BeforeClass;
 import org.testng.annotations.Test;
@@ -80,13 +77,6 @@ public class RealtimeClusterIntegrationTest extends BaseClusterIntegrationTestSe
   @Test
   @Override
   public void testQueriesFromQueryFile()
-      throws Exception {
-    super.testQueriesFromQueryFile();
-  }
-
-  @Test
-  @Override
-  public void testSqlQueriesFromQueryFile()
       throws Exception {
     super.testQueriesFromQueryFile();
   }
@@ -175,14 +165,16 @@ public class RealtimeClusterIntegrationTest extends BaseClusterIntegrationTestSe
     testQuery(pqlQuery, Collections.singletonList(sqlQuery));
   }
 
-  @Override
-  protected boolean isUsingNewConfigFormat() {
-    return true;
-  }
-
   @Test
   public void testHardcodedSqlQueries()
       throws Exception {
     super.testHardcodedSqlQueries();
+  }
+
+  @Test
+  @Override
+  public void testSqlQueriesFromQueryFile()
+      throws Exception {
+    super.testSqlQueriesFromQueryFile();
   }
 }

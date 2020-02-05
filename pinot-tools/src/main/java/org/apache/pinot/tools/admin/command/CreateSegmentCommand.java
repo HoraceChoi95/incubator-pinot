@@ -34,17 +34,18 @@ import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.FileStatus;
 import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
+import org.apache.pinot.plugin.inputformat.csv.CSVRecordReader;
+import org.apache.pinot.plugin.inputformat.csv.CSVRecordReaderConfig;
+import org.apache.pinot.spi.data.Schema;
 import org.apache.pinot.common.data.StarTreeIndexSpec;
 import org.apache.pinot.common.segment.ReadMode;
-import org.apache.pinot.common.utils.JsonUtils;
-import org.apache.pinot.core.data.readers.FileFormat;
-import org.apache.pinot.core.data.readers.RecordReader;
+import org.apache.pinot.spi.utils.JsonUtils;
+import org.apache.pinot.spi.data.readers.FileFormat;
+import org.apache.pinot.spi.data.readers.RecordReader;
 import org.apache.pinot.core.indexsegment.generator.SegmentGeneratorConfig;
 import org.apache.pinot.core.indexsegment.immutable.ImmutableSegment;
 import org.apache.pinot.core.indexsegment.immutable.ImmutableSegmentLoader;
 import org.apache.pinot.core.segment.creator.impl.SegmentIndexCreationDriverImpl;
-import org.apache.pinot.orc.data.readers.ORCRecordReader;
-import org.apache.pinot.parquet.data.readers.ParquetRecordReader;
 import org.apache.pinot.startree.hll.HllConfig;
 import org.apache.pinot.startree.hll.HllConstants;
 import org.apache.pinot.tools.Command;
@@ -403,19 +404,27 @@ public class CreateSegmentCommand extends AbstractBaseAdminCommand implements Co
               dataDirPath.getFileSystem(new Configuration()).copyToLocalFile(dataFilePath, localFilePath);
               config.setInputFilePath(localFile);
               config.setSegmentName(_segmentName + "_" + segCnt);
-              config.loadConfigFiles();
+              Schema schema = Schema.fromFile(new File(_schemaFile));
+              config.setSchema(schema);
 
               final SegmentIndexCreationDriverImpl driver = new SegmentIndexCreationDriverImpl();
               switch (config.getFormat()) {
                 case PARQUET:
-                  RecordReader parquetRecordReader = new ParquetRecordReader();
-                  parquetRecordReader.init(config);
-                  driver.init(config, parquetRecordReader);
+                  config.setRecordReaderPath("org.apache.pinot.plugin.inputformat.ParquetRecordReader");
+                  driver.init(config);
                   break;
                 case ORC:
-                  RecordReader orcRecordReader = new ORCRecordReader();
-                  orcRecordReader.init(config);
-                  driver.init(config, orcRecordReader);
+                  config.setRecordReaderPath("org.apache.pinot.plugin.inputformat.orc.ORCRecordReader");
+                  driver.init(config);
+                  break;
+                case CSV:
+                  RecordReader csvRecordReader = new CSVRecordReader();
+                  CSVRecordReaderConfig readerConfig = null;
+                  if (_readerConfigFile != null) {
+                    readerConfig = JsonUtils.fileToObject(new File(_readerConfigFile), CSVRecordReaderConfig.class);
+                  }
+                  csvRecordReader.init(new File(localFile), schema, readerConfig);
+                  driver.init(config, csvRecordReader);
                   break;
                 default:
                   driver.init(config);
@@ -448,7 +457,8 @@ public class CreateSegmentCommand extends AbstractBaseAdminCommand implements Co
   }
 
   private boolean verifySegment(File indexDir) {
-    File localTempDir = new File(FileUtils.getTempDirectory(), org.apache.pinot.common.utils.FileUtils.getRandomFileName());
+    File localTempDir =
+        new File(FileUtils.getTempDirectory(), org.apache.pinot.common.utils.FileUtils.getRandomFileName());
     try {
       try {
         localTempDir.getParentFile().mkdirs();

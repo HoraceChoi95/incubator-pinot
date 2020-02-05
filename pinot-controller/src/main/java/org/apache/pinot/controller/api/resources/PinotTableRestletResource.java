@@ -29,7 +29,6 @@ import java.util.LinkedList;
 import java.util.List;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.TimeUnit;
-import javax.annotation.Nonnull;
 import javax.annotation.Nullable;
 import javax.inject.Inject;
 import javax.ws.rs.DELETE;
@@ -53,12 +52,12 @@ import org.apache.pinot.common.metrics.ControllerMeter;
 import org.apache.pinot.common.metrics.ControllerMetrics;
 import org.apache.pinot.common.utils.CommonConstants;
 import org.apache.pinot.common.utils.CommonConstants.Helix.TableType;
-import org.apache.pinot.common.utils.JsonUtils;
 import org.apache.pinot.controller.ControllerConf;
 import org.apache.pinot.controller.helix.core.PinotHelixResourceManager;
 import org.apache.pinot.controller.helix.core.rebalance.RebalanceConfigConstants;
 import org.apache.pinot.controller.helix.core.rebalance.RebalanceResult;
 import org.apache.pinot.core.util.ReplicationUtils;
+import org.apache.pinot.spi.utils.JsonUtils;
 import org.slf4j.LoggerFactory;
 
 
@@ -166,7 +165,7 @@ public class PinotTableRestletResource {
     }
   }
 
-  private String listTableConfigs(@Nonnull String tableName, @Nullable String tableTypeStr) {
+  private String listTableConfigs(String tableName, @Nullable String tableTypeStr) {
     try {
       ObjectNode ret = JsonUtils.newObjectNode();
 
@@ -215,8 +214,8 @@ public class PinotTableRestletResource {
         ObjectNode offline = JsonUtils.newObjectNode();
         tableExists = true;
 
-        offline.put(FileUploadPathProvider.TABLE_NAME, offlineTableName);
-        offline.set(FileUploadPathProvider.STATE,
+        offline.put("tableName", offlineTableName);
+        offline.set("state",
             JsonUtils.objectToJsonNode(_pinotHelixResourceManager.toggleTableState(offlineTableName, stateType)));
         ret.add(offline);
       }
@@ -226,8 +225,8 @@ public class PinotTableRestletResource {
         ObjectNode realtime = JsonUtils.newObjectNode();
         tableExists = true;
 
-        realtime.put(FileUploadPathProvider.TABLE_NAME, realtimeTableName);
-        realtime.set(FileUploadPathProvider.STATE,
+        realtime.put("tableName", realtimeTableName);
+        realtime.set("state",
             JsonUtils.objectToJsonNode(_pinotHelixResourceManager.toggleTableState(realtimeTableName, stateType)));
         ret.add(realtime);
       }
@@ -255,7 +254,7 @@ public class PinotTableRestletResource {
     List<String> tablesDeleted = new LinkedList<>();
     try {
       boolean tableExist = false;
-      if (verifyTableType(tableName, tableType, tableType.OFFLINE)) {
+      if (verifyTableType(tableName, tableType, TableType.OFFLINE)) {
         tableExist = _pinotHelixResourceManager.hasOfflineTable(tableName);
         // Even the table name does not exist, still go on to delete remaining table metadata in case a previous delete
         // did not complete.
@@ -264,7 +263,7 @@ public class PinotTableRestletResource {
           tablesDeleted.add(TableNameBuilder.OFFLINE.tableNameWithType(tableName));
         }
       }
-      if (verifyTableType(tableName, tableType, tableType.REALTIME)) {
+      if (verifyTableType(tableName, tableType, TableType.REALTIME)) {
         tableExist = _pinotHelixResourceManager.hasRealtimeTable(tableName);
         // Even the table name does not exist, still go on to delete remaining table metadata in case a previous delete
         // did not complete.
@@ -280,7 +279,7 @@ public class PinotTableRestletResource {
       throw new ControllerApplicationException(LOGGER, e.getMessage(), Response.Status.INTERNAL_SERVER_ERROR, e);
     }
     throw new ControllerApplicationException(LOGGER,
-          "Table '" + tableName + "' with type " + tableType + " does not exist", Response.Status.NOT_FOUND);
+        "Table '" + tableName + "' with type " + tableType + " does not exist", Response.Status.NOT_FOUND);
   }
 
   //   Return true iff the table is of the expectedType based on the given tableName and tableType. The truth table:
@@ -462,24 +461,26 @@ public class PinotTableRestletResource {
     LOGGER.info("Finished validating tables config for Table: {}", rawTableName);
   }
 
-  /**
-   * Rebalance a table.
-   * @return if in DRY_RUN, the target idealstate/partition-map is returned. Else an indication of success/failure in
-   *         triggering the rebalance is returned.
-   */
   @POST
   @Produces(MediaType.APPLICATION_JSON)
   @Path("/tables/{tableName}/rebalance")
-  @ApiOperation(value = "Rebalances segments of a table across servers", notes = "Rebalances segments of a table across servers")
+  @ApiOperation(value = "Rebalances a table (reassign instances and segments for a table)", notes = "Rebalances a table (reassign instances and segments for a table)")
   public RebalanceResult rebalance(
-      @ApiParam(value = "Name of the table to rebalance") @Nonnull @PathParam("tableName") String tableName,
-      @ApiParam(value = "OFFLINE|REALTIME") @Nonnull @QueryParam("type") String tableTypeStr,
+      @ApiParam(value = "Name of the table to rebalance", required = true) @PathParam("tableName") String tableName,
+      @ApiParam(value = "OFFLINE|REALTIME", required = true) @QueryParam("type") String tableTypeStr,
       @ApiParam(value = "Whether to rebalance table in dry-run mode") @DefaultValue("false") @QueryParam("dryRun") boolean dryRun,
-      @ApiParam(value = "Whether to reassign instances before rebalancing the table") @DefaultValue("false") @QueryParam("reassignInstances") boolean reassignInstances,
-      @ApiParam(value = "Whether to rebalance CONSUMING segments for real-time table") @DefaultValue("false") @QueryParam("includeConsuming") boolean includeConsuming,
-      @ApiParam(value = "Whether to allow downtime (0 replicas up) for rebalance") @DefaultValue("false") @QueryParam("downtime") boolean downtime,
-      @ApiParam(value = "Minimum number of replicas to keep alive during rebalance (if downtime is false), or maximum number of replicas allowed to be unavailable if value is negative") @DefaultValue("1") @QueryParam("minAvailableReplicas") int minAvailableReplicas) {
-    TableType tableType = Constants.validateTableType(tableTypeStr);
+      @ApiParam(value = "Whether to reassign instances before reassigning segments") @DefaultValue("false") @QueryParam("reassignInstances") boolean reassignInstances,
+      @ApiParam(value = "Whether to reassign CONSUMING segments for real-time table") @DefaultValue("false") @QueryParam("includeConsuming") boolean includeConsuming,
+      @ApiParam(value = "Whether to allow downtime for the rebalance") @DefaultValue("false") @QueryParam("downtime") boolean downtime,
+      @ApiParam(value = "For no-downtime rebalance, minimum number of replicas to keep alive during rebalance, or maximum number of replicas allowed to be unavailable if value is negative") @DefaultValue("1") @QueryParam("minAvailableReplicas") int minAvailableReplicas,
+      @ApiParam(value = "Whether to use best-efforts to rebalance (not fail the rebalance when the no-downtime contract cannot be achieved)") @DefaultValue("false") @QueryParam("bestEfforts") boolean bestEfforts) {
+    TableType tableType;
+    try {
+      tableType = TableType.valueOf(tableTypeStr.toUpperCase());
+    } catch (IllegalArgumentException e) {
+      throw new ControllerApplicationException(LOGGER, "Illegal table type: " + tableTypeStr,
+          Response.Status.BAD_REQUEST);
+    }
     String tableNameWithType = TableNameBuilder.forType(tableType).tableNameWithType(tableName);
 
     Configuration rebalanceConfig = new BaseConfiguration();
@@ -488,19 +489,20 @@ public class PinotTableRestletResource {
     rebalanceConfig.addProperty(RebalanceConfigConstants.INCLUDE_CONSUMING, includeConsuming);
     rebalanceConfig.addProperty(RebalanceConfigConstants.DOWNTIME, downtime);
     rebalanceConfig.addProperty(RebalanceConfigConstants.MIN_REPLICAS_TO_KEEP_UP_FOR_NO_DOWNTIME, minAvailableReplicas);
+    rebalanceConfig.addProperty(RebalanceConfigConstants.BEST_EFFORTS, bestEfforts);
 
     try {
-      if (dryRun) {
+      if (dryRun || downtime) {
+        // For dry-run or rebalance with downtime, directly return the rebalance result as it should return immediately
         return _pinotHelixResourceManager.rebalanceTable(tableNameWithType, rebalanceConfig);
       } else {
         // Make a dry-run first to get the target assignment
-        Configuration dryRunConfig = new BaseConfiguration();
-        dryRunConfig.addProperty(RebalanceConfigConstants.DRY_RUN, true);
-        dryRunConfig.addProperty(RebalanceConfigConstants.REASSIGN_INSTANCES, reassignInstances);
-        dryRunConfig.addProperty(RebalanceConfigConstants.INCLUDE_CONSUMING, includeConsuming);
-        RebalanceResult dryRunResult = _pinotHelixResourceManager.rebalanceTable(tableNameWithType, dryRunConfig);
+        rebalanceConfig.setProperty(RebalanceConfigConstants.DRY_RUN, true);
+        RebalanceResult dryRunResult = _pinotHelixResourceManager.rebalanceTable(tableNameWithType, rebalanceConfig);
+
         if (dryRunResult.getStatus() == RebalanceResult.Status.DONE) {
           // If dry-run succeeded, run rebalance asynchronously
+          rebalanceConfig.setProperty(RebalanceConfigConstants.DRY_RUN, false);
           _executorService.submit(() -> {
             try {
               _pinotHelixResourceManager.rebalanceTable(tableNameWithType, rebalanceConfig);
@@ -512,6 +514,7 @@ public class PinotTableRestletResource {
               "In progress, check controller logs for updates", dryRunResult.getInstanceAssignment(),
               dryRunResult.getSegmentAssignment());
         } else {
+          // If dry-run failed or is no-op, return the dry-run result
           return dryRunResult;
         }
       }

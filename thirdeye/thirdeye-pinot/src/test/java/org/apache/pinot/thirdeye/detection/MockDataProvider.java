@@ -129,32 +129,21 @@ public class MockDataProvider implements DataProvider {
     return result;
   }
 
-  private Multimap<AnomalySlice, MergedAnomalyResultDTO> fetchAnomalies(Collection<AnomalySlice> slices,
-      long configId, boolean isLegacy) {
+  @Override
+  public Multimap<AnomalySlice, MergedAnomalyResultDTO> fetchAnomalies(Collection<AnomalySlice> slices) {
     Multimap<AnomalySlice, MergedAnomalyResultDTO> result = ArrayListMultimap.create();
     for (AnomalySlice slice : slices) {
       for (MergedAnomalyResultDTO anomaly : this.anomalies) {
         if (slice.match(anomaly)) {
-          if (isLegacy) {
-            if (configId >= 0 && (anomaly.getFunctionId() == null || anomaly.getFunctionId() != configId)) {
-              continue;
-            }
-          } else {
-            if (configId >= 0 && (anomaly.getDetectionConfigId() == null || anomaly.getDetectionConfigId() != configId)) {
-              continue;
-            }
+          if (slice.getDetectionId() >= 0 && (anomaly.getDetectionConfigId() == null
+              || anomaly.getDetectionConfigId() != slice.getDetectionId())) {
+            continue;
           }
           result.put(slice, anomaly);
         }
       }
     }
     return result;
-  }
-
-  @Override
-  public Multimap<AnomalySlice, MergedAnomalyResultDTO> fetchAnomalies(Collection<AnomalySlice> slices,
-      long configId) {
-    return fetchAnomalies(slices, configId, false);
   }
 
   @Override

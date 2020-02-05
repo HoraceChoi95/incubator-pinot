@@ -19,8 +19,8 @@ import { later } from '@ember/runloop';
 import { checkStatus,
   humanizeFloat,
   postProps,
-  replaceNonFiniteWithCurrent,
-  stripNonFiniteValues } from 'thirdeye-frontend/utils/utils';
+  stripNonFiniteValues,
+  buildBounds } from 'thirdeye-frontend/utils/utils';
 import { toastOptions } from 'thirdeye-frontend/utils/constants';
 import { colorMapping, makeTime, toMetricLabel, extractTail } from 'thirdeye-frontend/utils/rca-utils';
 import { getYamlPreviewAnomalies,
@@ -236,7 +236,7 @@ export default Component.extend({
         granularity,
         dimensionExploration
       } = this.getProperties('isPreviewMode', 'granularity', 'dimensionExploration');
-      return (isPreviewMode || (!dimensionExploration && ((granularity || '').includes('DAYS'))));
+      return (isPreviewMode || (!dimensionExploration && ((granularity || '').includes('MINUTES') || (granularity || '').includes('DAYS'))));
     }
   ),
 
@@ -328,6 +328,14 @@ export default Component.extend({
     }
   }),
 
+  disableRerunButton: computed(
+    'alertYaml',
+    'isLoading',
+    'dataIsCurrent',
+    function() {
+      return (!get(this, 'alertYaml')|| get(this, 'isLoading') || get(this, 'dataIsCurrent'));
+    }
+  ),
   disablePreviewButton: computed(
     'alertYaml',
     '_getAnomalies.isIdle',
@@ -384,25 +392,10 @@ export default Component.extend({
     'selectedDimension',
     'showRules',
     function() {
-      let filteredAnomaliesOld = [];
       const {
         metricUrn, anomaliesOld, selectedRule, showRules
       } = getProperties(this, 'metricUrn', 'anomaliesOld', 'selectedRule', 'showRules');
-      if (!_.isEmpty(anomaliesOld)) {
-
-        filteredAnomaliesOld = anomaliesOld.filter(anomaly => {
-          if (anomaly.metricUrn === metricUrn) {
-            if(showRules && anomaly.properties && typeof anomaly.properties === 'object' && selectedRule && typeof selectedRule === 'object') {
-              return ((anomaly.properties.detectorComponentName || '').includes(selectedRule.detectorName));
-            } else if (!showRules) {
-              // This is necessary until we surface rule selector in Alert Overview
-              return true;
-            }
-          }
-          return false;
-        });
-      }
-      return filteredAnomaliesOld;
+      return this._filterAnomalies(anomaliesOld, metricUrn, showRules, selectedRule);
     }
   ),
 
@@ -419,25 +412,10 @@ export default Component.extend({
     'selectedDimension',
     'showRules',
     function() {
-      let filteredAnomaliesCurrent = [];
       const {
         metricUrn, anomaliesCurrent, selectedRule, showRules
       } = getProperties(this, 'metricUrn', 'anomaliesCurrent', 'selectedRule', 'showRules');
-      if (!_.isEmpty(anomaliesCurrent)) {
-
-        filteredAnomaliesCurrent = anomaliesCurrent.filter(anomaly => {
-          if (anomaly.metricUrn === metricUrn) {
-            if(showRules && anomaly.properties && typeof anomaly.properties === 'object' && selectedRule && typeof selectedRule === 'object') {
-              return (anomaly.properties.detectorComponentName.includes(selectedRule.detectorName));
-            } else if (!showRules) {
-              // This is necessary until we surface rule selector in Alert Overview
-              return true;
-            }
-          }
-          return false;
-        });
-      }
-      return filteredAnomaliesCurrent;
+      return this._filterAnomalies(anomaliesCurrent, metricUrn, showRules, selectedRule);
     }
   ),
 
@@ -526,140 +504,28 @@ export default Component.extend({
         };
       }
 
-      if (baseline && !_.isEmpty(baseline.upper_bound)) {
-        series['Upper and lower bound'] = {
-          timestamps: baseline.timestamp,
-          values: replaceNonFiniteWithCurrent(baseline.upper_bound,
-            showRules ? timeseries.current : timeseries.value),
-          type: 'line',
-          color: 'screenshot-bounds'
-        };
-      }
+      // build upper and lower bounds, as relevant
+      buildBounds(series, baseline, timeseries, showRules);
 
-      if (baseline && !_.isEmpty(baseline.lower_bound)) {
-        series['lowerBound'] = {
-          timestamps: baseline.timestamp,
-          values: replaceNonFiniteWithCurrent(baseline.lower_bound,
-            showRules ? timeseries.current : timeseries.value),
-          type: 'line',
-          color: 'screenshot-bounds'
-        };
-      }
       // build set of anomalous values (newer of 2 sets of anomalies)
-      if (!_.isEmpty(filteredAnomaliesCurrent) && timeseries && !_.isEmpty(series.Current)) {
-        const valuesCurrent = [];
-        // needed because anomalies with startTime before time window are possible
-        let currentAnomaly = filteredAnomaliesCurrent.find(anomaly => {
-          return anomaly.startTime <= series.Current.timestamps[0];
-        });
-        let inAnomalyRange = currentAnomaly ? true : false;
-        let anomalyEdgeValues = [];
-        let anomalyEdgeTimestamps = [];
-        for (let i = 0; i < series.Current.timestamps.length; ++i) {
-          if (!inAnomalyRange) {
-            currentAnomaly = filteredAnomaliesCurrent.find(anomaly => {
-              return anomaly.startTime === series.Current.timestamps[i];
-            });
-            if (currentAnomaly) {
-              inAnomalyRange = true;
-              valuesCurrent.push(series.Current.values[i]);
-              anomalyEdgeValues.push(series.Current.values[i]);
-              anomalyEdgeTimestamps.push(series.Current.timestamps[i]);
-            } else {
-              valuesCurrent.push(null);
-            }
-          } else if (currentAnomaly.endTime === series.Current.timestamps[i]) {
-            inAnomalyRange = false;
-            // we don't want to include the endTime in anomaly range
-            currentAnomaly = filteredAnomaliesCurrent.find(anomaly => {
-              return anomaly.startTime === series.Current.timestamps[i];
-            });
-            if (currentAnomaly) {
-              inAnomalyRange = true;
-              valuesCurrent.push(series.Current.values[i]);
-              anomalyEdgeValues.push(series.Current.values[i]);
-              anomalyEdgeTimestamps.push(series.Current.timestamps[i]);
-            } else {
-              anomalyEdgeValues.push(series.Current.values[i-1]);
-              anomalyEdgeTimestamps.push(series.Current.timestamps[i-1]);
-              valuesCurrent.push(null);
-            }
-          } else {
-            valuesCurrent.push(series.Current.values[i]);
-          }
-        }
-        series[anomaliesCurrentLabel] = {
-          timestamps: series.Current.timestamps,
-          values: valuesCurrent,
-          type: 'line',
-          color: 'red'
-        };
-        series['new-anomaly-edges'] = {
-          timestamps: anomalyEdgeTimestamps,
-          values: anomalyEdgeValues,
-          type: 'scatter',
-          color: 'red'
-        };
-      }
-      // build set of new anomalies
-      if (!_.isEmpty(filteredAnomaliesOld) && timeseries && !_.isEmpty(series.Current)) {
-        const valuesOld = [];
-        // needed because anomalies with startTime before time window are possible
-        let currentAnomaly = filteredAnomaliesOld.find(anomaly => {
-          return anomaly.startTime <= series.Current.timestamps[0];
-        });
-        let inAnomalyRange = currentAnomaly ? true : false;
-        let anomalyEdgeValues = [];
-        let anomalyEdgeTimestamps = [];
-        for (let i = 0; i < series.Current.timestamps.length; ++i) {
-          if (!inAnomalyRange) {
-            currentAnomaly = filteredAnomaliesOld.find(anomaly => {
-              return anomaly.startTime === series.Current.timestamps[i];
-            });
-            if (currentAnomaly) {
-              inAnomalyRange = true;
-              valuesOld.push(1.0);
-              anomalyEdgeValues.push(1.0);
-              anomalyEdgeTimestamps.push(series.Current.timestamps[i]);
-            } else {
-              valuesOld.push(null);
-            }
-          } else if (currentAnomaly.endTime === series.Current.timestamps[i]) {
-            inAnomalyRange = false;
-            // we don't want to include the endTime in anomaly range
-            currentAnomaly = filteredAnomaliesOld.find(anomaly => {
-              return anomaly.startTime === series.Current.timestamps[i];
-            });
-            if (currentAnomaly) {
-              inAnomalyRange = true;
-              valuesOld.push(1.0);
-              anomalyEdgeValues.push(1.0);
-              anomalyEdgeTimestamps.push(series.Current.timestamps[i]);
-            } else {
-              anomalyEdgeValues.push(1.0);
-              anomalyEdgeTimestamps.push(series.Current.timestamps[i-1]);
-              valuesOld.push(null);
-            }
-          } else {
-            valuesOld.push(1.0);
-          }
-        }
-        series[anomaliesOldLabel] = {
-          timestamps: series.Current.timestamps,
-          values: valuesOld,
-          type: 'line',
-          color: 'grey',
-          axis: 'y2'
-        };
-        series['old-anomaly-edges'] = {
-          timestamps: anomalyEdgeTimestamps,
-          values: anomalyEdgeValues,
-          type: 'scatter',
-          color: 'grey',
-          axis: 'y2'
-        };
-      }
+      this._mapAnomaliesToTimeSeries(
+        filteredAnomaliesCurrent,
+        timeseries,
+        series,
+        anomaliesCurrentLabel,
+        'new-anomaly-edges',
+        'red',
+        true);
 
+      // build set of previous anomalies
+      this._mapAnomaliesToTimeSeries(
+        filteredAnomaliesOld,
+        timeseries,
+        series,
+        anomaliesOldLabel,
+        'old-anomaly-edges',
+        'grey',
+        false);
       return series;
     }
   ),
@@ -689,11 +555,11 @@ export default Component.extend({
       let fakeId = 0;
       if (anomaliesOld) {
         anomaliesOld.forEach(a => {
-          // 'settings' field only matters if column for settings shown
           const dimensionKeys = Object.keys(a.dimensions || {});
           const dimensionValues = dimensionKeys.map(d => a.dimensions[d]);
           const dimensionsString = [...dimensionKeys, ...dimensionValues].join();
           set(a, 'dimensionStr', dimensionsString);
+          // 'settings' field only matters if column for settings shown
           set(a, 'settings', ((stateOfAnomaliesAndTimeSeries === 2) && this.get('isEditMode')) ? 'Current' : 'Old');
           // settingsNum is for sorting anomalies by 'new' vs 'old' regardless of label given
           set(a, 'settingsNum', 1);
@@ -716,6 +582,10 @@ export default Component.extend({
       }
       if (anomaliesCurrent) {
         anomaliesCurrent.forEach(a => {
+          const dimensionKeys = Object.keys(a.dimensions || {});
+          const dimensionValues = dimensionKeys.map(d => a.dimensions[d]);
+          const dimensionsString = [...dimensionKeys, ...dimensionValues].join();
+          set(a, 'dimensionStr', dimensionsString);
           // 'settings' field only matters if column for settings shown
           set(a, 'settings', 'New');
           // settingsNum is for sorting anomalies by 'new' vs 'old' regardless of label given
@@ -927,10 +797,9 @@ export default Component.extend({
       notifications,
       showRules,
       alertId,
-      granularity,
       stateOfAnomaliesAndTimeSeries
     } = this.getProperties('analysisRange', 'anomaliesRange', 'notifications',
-      'showRules', 'alertId', 'granularity', 'stateOfAnomaliesAndTimeSeries');
+      'showRules', 'alertId', 'stateOfAnomaliesAndTimeSeries');
     //detection alert fetch
     const start = analysisRange[0];
     const end = analysisRange[1];
@@ -944,7 +813,7 @@ export default Component.extend({
     try {
       // case 4 is anomaliesOld for Edit Alert Preview, so we only need the real anomalies without time series
       if(showRules && stateOfAnomaliesAndTimeSeries !== 4){
-        applicationAnomalies = ((granularity || '').includes('DAYS')) ? yield getBounds(alertId, startAnomalies, endAnomalies) : yield getYamlPreviewAnomalies(alertYaml, startAnomalies, endAnomalies, alertId);
+        applicationAnomalies = (!this.get('isPreviewMode')) ? yield getBounds(alertId, startAnomalies, endAnomalies) : yield getYamlPreviewAnomalies(alertYaml, startAnomalies, endAnomalies, alertId);
         if (applicationAnomalies && applicationAnomalies.diagnostics && applicationAnomalies.diagnostics['0']) {
           metricUrnList = Object.keys(applicationAnomalies.diagnostics['0']);
           set(this, 'metricUrnList', metricUrnList);
@@ -1011,8 +880,8 @@ export default Component.extend({
         analysisRange: [moment().subtract(timeWindowSize, 'milliseconds').startOf('day').valueOf(), moment().add(1, 'day').startOf('day').valueOf()],
         duration: (timeWindowSize === 172800000) ? '48h' : 'custom',
         selectedDimension: 'Choose a dimension',
-        // For now, we will only show predicted and bounds on daily metrics with no dimensions, for the Alert Overview page
-        selectedBaseline: ((granularity || '').includes('DAYS') && !dimensionExploration) ? 'predicted' : 'wo1w',
+        // For now, we will only show predicted and bounds on daily and minutely metrics with no dimensions, for the Alert Overview page
+        selectedBaseline: (!dimensionExploration && ((granularity || '').includes('MINUTES') || (granularity || '').includes('DAYS'))) ? 'predicted' : 'wo1w',
         // We distinguish these because it only needs the route's info on init.  After that, component manages state
         metricUrnList: this.get('metricUrnListRoute'),
         metricUrn: this.get('metricUrnRoute')
@@ -1030,7 +899,90 @@ export default Component.extend({
         // We distinguish these because it only needs the route's info on init.  After that, component manages state
         metricUrnList: this.get('metricUrnListRoute'),
         metricUrn: this.get('metricUrnRoute')
-      })
+      });
+    }
+  },
+
+  /**
+   * Helper to map anomalies and start/endpoints over current timestamps
+   * @method _mapAnomaliesToTimeSeries
+   * @param {Array} filteredAnomalies - The results object from _getAnomalies method
+   * @param {Object} timeseries - The object holding timeseries response data
+   * @param {Object} series - The object being built to pass to c3js graph
+   * @param {String} anomaliesLabel - Name to use as key for anomaly data
+   * @param {String} edgesLabel - Name to use as key for anomaly edge points
+   * @param {String} color - The color for the anomaly data in the graph
+   * @param {Boolean} useValues - Whether to use the current values for anomaly values or not
+   * @return {undefined}
+   */
+  _mapAnomaliesToTimeSeries(
+    filteredAnomalies,
+    timeseries,
+    series,
+    anomaliesLabel,
+    edgesLabel,
+    color,
+    useValue) {
+    // build set of anomalous values (newer of 2 sets of anomalies)
+    if (!_.isEmpty(filteredAnomalies) && timeseries && !_.isEmpty(series.Current)) {
+      const valuesCurrent = [];
+      // needed because anomalies with startTime before time window are possible
+      let currentAnomaly = filteredAnomalies.find(anomaly => {
+        return anomaly.startTime <= series.Current.timestamps[0];
+      });
+      let inAnomalyRange = currentAnomaly ? true : false;
+      let anomalyEdgeValues = [];
+      let anomalyEdgeTimestamps = [];
+      for (let i = 0; i < series.Current.timestamps.length; ++i) {
+        const anomalyValue = useValue ? series.Current.values[i] : 1.0;
+        if (!inAnomalyRange) {
+          currentAnomaly = filteredAnomalies.find(anomaly => {
+            return anomaly.startTime === series.Current.timestamps[i];
+          });
+          if (currentAnomaly) {
+            inAnomalyRange = true;
+            valuesCurrent.push(anomalyValue);
+            anomalyEdgeValues.push(anomalyValue);
+            anomalyEdgeTimestamps.push(series.Current.timestamps[i]);
+          } else {
+            valuesCurrent.push(null);
+          }
+        } else if (currentAnomaly.endTime <= series.Current.timestamps[i]) {
+          inAnomalyRange = false;
+          // we don't want to include the endTime in anomaly range
+          currentAnomaly = filteredAnomalies.find(anomaly => {
+            return anomaly.startTime === series.Current.timestamps[i];
+          });
+          if (currentAnomaly) {
+            inAnomalyRange = true;
+            valuesCurrent.push(anomalyValue);
+            anomalyEdgeValues.push(anomalyValue);
+            anomalyEdgeTimestamps.push(series.Current.timestamps[i]);
+          } else if (i > 0) {
+            anomalyEdgeValues.push(series.Current.values[i-1]);
+            anomalyEdgeTimestamps.push(series.Current.timestamps[i-1]);
+            valuesCurrent.push(null);
+          }
+        } else {
+          valuesCurrent.push(anomalyValue);
+        }
+      }
+      series[anomaliesLabel] = {
+        timestamps: series.Current.timestamps,
+        values: valuesCurrent,
+        type: 'line',
+        color
+      };
+      series[edgesLabel] = {
+        timestamps: anomalyEdgeTimestamps,
+        values: anomalyEdgeValues,
+        type: 'scatter',
+        color
+      };
+      if (!useValue) {
+        series[anomaliesLabel].axis = 'y2';
+        series[edgesLabel].axis = 'y2';
+      }
     }
   },
 
@@ -1171,8 +1123,32 @@ export default Component.extend({
     set(this, 'errorBaseline', null);
   },
 
-  _filterAnomalies(rows) {
-    return rows.filter(row => (row.startTime && row.endTime && !row.child));
+  /**
+   * Helper function to implement logic for filtering a set of anomalies
+   * returns set of anomalies to display in graph based on selections
+   * @method _filterAnomalies
+   * @param anomalies - an array of anomaly objects
+   * @param metricUrn - the metricUrn currently selected for time series chart
+   * @param showRules - whether we are showing detection rules and bounds in time series chart
+   * @param selectedRule - which detection rule selected for time series chart 
+   * @return {Array}
+   */
+  _filterAnomalies(anomalies, metricUrn, showRules, selectedRule) {
+    let filteredAnomalies = [];
+    if (!_.isEmpty(anomalies)) {
+      filteredAnomalies = anomalies.filter(anomaly => {
+        if (anomaly.metricUrn === metricUrn) {
+          if(showRules && anomaly.properties && typeof anomaly.properties === 'object' && selectedRule && typeof selectedRule === 'object') {
+            return ((anomaly.properties.detectorComponentName || '').includes(selectedRule.detectorName));
+          } else if (!showRules) {
+            // This is necessary until we surface rule selector in Alert Overview
+            return true;
+          }
+        }
+        return false;
+      });
+    }
+    return filteredAnomalies;
   },
 
   _formatAnomaly(anomaly) {

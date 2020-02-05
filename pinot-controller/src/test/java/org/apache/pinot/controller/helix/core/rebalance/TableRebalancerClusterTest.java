@@ -32,7 +32,6 @@ import org.apache.pinot.common.config.TagNameUtils;
 import org.apache.pinot.common.config.instance.InstanceAssignmentConfig;
 import org.apache.pinot.common.config.instance.InstanceReplicaGroupPartitionConfig;
 import org.apache.pinot.common.config.instance.InstanceTagPoolConfig;
-import org.apache.pinot.common.utils.CommonConstants;
 import org.apache.pinot.common.utils.CommonConstants.Helix.TableType;
 import org.apache.pinot.controller.helix.ControllerTest;
 import org.apache.pinot.controller.helix.core.assignment.segment.SegmentAssignmentUtils;
@@ -41,6 +40,7 @@ import org.testng.annotations.AfterClass;
 import org.testng.annotations.BeforeClass;
 import org.testng.annotations.Test;
 
+import static org.apache.pinot.common.utils.CommonConstants.Helix.StateModel.SegmentOnlineOfflineStateModel.ONLINE;
 import static org.testng.Assert.assertEquals;
 import static org.testng.Assert.assertFalse;
 import static org.testng.Assert.assertNull;
@@ -48,7 +48,6 @@ import static org.testng.Assert.assertTrue;
 
 
 public class TableRebalancerClusterTest extends ControllerTest {
-  private static final String ONLINE = CommonConstants.Helix.StateModel.SegmentOnlineOfflineStateModel.ONLINE;
   private static final String RAW_TABLE_NAME = "testTable";
   private static final String OFFLINE_TABLE_NAME = TableNameBuilder.OFFLINE.tableNameWithType(RAW_TABLE_NAME);
   private static final int NUM_REPLICAS = 3;
@@ -176,21 +175,17 @@ public class TableRebalancerClusterTest extends ControllerTest {
     assertEquals(rebalanceResult.getSegmentAssignment(), newSegmentAssignment);
 
     // ExternalView should match the new segment assignment
-    assertTrue(TableRebalancer.isExternalViewConverged(
-        _helixResourceManager.getTableExternalView(OFFLINE_TABLE_NAME).getRecord().getMapFields(),
-        newSegmentAssignment));
+    assertTrue(TableRebalancer.isExternalViewConverged(OFFLINE_TABLE_NAME,
+        _helixResourceManager.getTableExternalView(OFFLINE_TABLE_NAME).getRecord().getMapFields(), newSegmentAssignment,
+        false));
 
     // Update the table config to use replica-group based assignment
-    InstanceAssignmentConfig instanceAssignmentConfig = new InstanceAssignmentConfig();
-    InstanceTagPoolConfig tagPoolConfig = new InstanceTagPoolConfig();
-    tagPoolConfig.setTag(TagNameUtils.getOfflineTagForTenant(null));
-    instanceAssignmentConfig.setTagPoolConfig(tagPoolConfig);
-    InstanceReplicaGroupPartitionConfig replicaGroupPartitionConfig = new InstanceReplicaGroupPartitionConfig();
-    replicaGroupPartitionConfig.setReplicaGroupBased(true);
-    replicaGroupPartitionConfig.setNumReplicaGroups(NUM_REPLICAS);
-    instanceAssignmentConfig.setReplicaGroupPartitionConfig(replicaGroupPartitionConfig);
-    tableConfig.setInstanceAssignmentConfigMap(
-        Collections.singletonMap(InstancePartitionsType.OFFLINE, instanceAssignmentConfig));
+    InstanceTagPoolConfig tagPoolConfig =
+        new InstanceTagPoolConfig(TagNameUtils.getOfflineTagForTenant(null), false, 0, null);
+    InstanceReplicaGroupPartitionConfig replicaGroupPartitionConfig =
+        new InstanceReplicaGroupPartitionConfig(true, 0, NUM_REPLICAS, 0, 0, 0);
+    tableConfig.setInstanceAssignmentConfigMap(Collections.singletonMap(InstancePartitionsType.OFFLINE,
+        new InstanceAssignmentConfig(tagPoolConfig, null, replicaGroupPartitionConfig)));
     _helixResourceManager.updateTableConfig(tableConfig);
 
     // No need to reassign instances because instances should be automatically assigned when updating the table config
@@ -236,9 +231,9 @@ public class TableRebalancerClusterTest extends ControllerTest {
     assertEquals(numSegmentsOnServer0, numSegments / 2);
 
     // ExternalView should match the segment assignment
-    assertTrue(TableRebalancer.isExternalViewConverged(
-        _helixResourceManager.getTableExternalView(OFFLINE_TABLE_NAME).getRecord().getMapFields(),
-        newSegmentAssignment));
+    assertTrue(TableRebalancer.isExternalViewConverged(OFFLINE_TABLE_NAME,
+        _helixResourceManager.getTableExternalView(OFFLINE_TABLE_NAME).getRecord().getMapFields(), newSegmentAssignment,
+        false));
 
     // Update the table config to use non-replica-group based assignment
     tableConfig.setInstanceAssignmentConfigMap(null);
@@ -304,11 +299,6 @@ public class TableRebalancerClusterTest extends ControllerTest {
         assertFalse(instanceStateMap.containsKey(SERVER_INSTANCE_ID_PREFIX + (numServers + j)));
       }
     }
-
-    // ExternalView should match the new segment assignment
-    assertTrue(TableRebalancer.isExternalViewConverged(
-        _helixResourceManager.getTableExternalView(OFFLINE_TABLE_NAME).getRecord().getMapFields(),
-        newSegmentAssignment));
 
     _helixResourceManager.deleteOfflineTable(RAW_TABLE_NAME);
   }

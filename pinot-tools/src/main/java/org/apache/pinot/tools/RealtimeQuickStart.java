@@ -24,12 +24,13 @@ import java.io.File;
 import java.net.URL;
 import org.apache.commons.io.FileUtils;
 import org.apache.pinot.common.utils.ZkStarter;
-import org.apache.pinot.core.realtime.impl.kafka.KafkaStarterUtils;
-import org.apache.pinot.core.realtime.stream.StreamDataProvider;
-import org.apache.pinot.core.realtime.stream.StreamDataServerStartable;
+import org.apache.pinot.spi.plugin.PluginManager;
+import org.apache.pinot.spi.stream.StreamDataProvider;
+import org.apache.pinot.spi.stream.StreamDataServerStartable;
 import org.apache.pinot.tools.Quickstart.Color;
 import org.apache.pinot.tools.admin.command.QuickstartRunner;
 import org.apache.pinot.tools.streams.MeetupRsvpStream;
+import org.apache.pinot.tools.utils.KafkaStarterUtils;
 
 import static org.apache.pinot.tools.Quickstart.prettyPrintResponse;
 import static org.apache.pinot.tools.Quickstart.printStatus;
@@ -43,6 +44,7 @@ public class RealtimeQuickStart {
 
   public static void main(String[] args)
       throws Exception {
+    PluginManager.get().init();
     new RealtimeQuickStart().execute();
   }
 
@@ -58,10 +60,10 @@ public class RealtimeQuickStart {
     File tableConfigFile = new File(quickStartDataDir, "meetupRsvp_realtime_table_config.json");
 
     ClassLoader classLoader = Quickstart.class.getClassLoader();
-    URL resource = classLoader.getResource("sample_data/meetupRsvp_schema.json");
+    URL resource = classLoader.getResource("examples/stream/meetupRsvp/meetupRsvp_schema.json");
     com.google.common.base.Preconditions.checkNotNull(resource);
     FileUtils.copyURLToFile(resource, schemaFile);
-    resource = classLoader.getResource("sample_data/meetupRsvp_realtime_table_config.json");
+    resource = classLoader.getResource("examples/stream/meetupRsvp/meetupRsvp_realtime_table_config.json");
     com.google.common.base.Preconditions.checkNotNull(resource);
     FileUtils.copyURLToFile(resource, tableConfigFile);
 
@@ -82,8 +84,6 @@ public class RealtimeQuickStart {
 
     printStatus(Color.CYAN, "***** Starting Zookeeper, controller, server and broker *****");
     runner.startAll();
-    printStatus(Color.CYAN, "***** Adding meetupRSVP schema *****");
-    runner.addSchema();
     printStatus(Color.CYAN, "***** Adding meetupRSVP table *****");
     runner.addTable();
     printStatus(Color.CYAN, "***** Starting meetup data stream and publishing to Kafka *****");

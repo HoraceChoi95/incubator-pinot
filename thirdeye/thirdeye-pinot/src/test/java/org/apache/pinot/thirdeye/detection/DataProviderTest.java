@@ -14,6 +14,7 @@
  * limitations under the License.
  */
 
+
 package org.apache.pinot.thirdeye.detection;
 
 import com.google.common.collect.HashMultimap;
@@ -28,9 +29,8 @@ import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
-import org.apache.pinot.thirdeye.common.dimension.DimensionMap;
+import org.apache.pinot.thirdeye.anomaly.AnomalyType;
 import org.apache.pinot.thirdeye.dataframe.DataFrame;
 import org.apache.pinot.thirdeye.datalayer.bao.DAOTestBase;
 import org.apache.pinot.thirdeye.datalayer.bao.DatasetConfigManager;
@@ -45,12 +45,11 @@ import org.apache.pinot.thirdeye.datalayer.dto.EventDTO;
 import org.apache.pinot.thirdeye.datalayer.dto.MergedAnomalyResultDTO;
 import org.apache.pinot.thirdeye.datalayer.dto.MetricConfigDTO;
 import org.apache.pinot.thirdeye.datasource.DAORegistry;
-import org.apache.pinot.thirdeye.datasource.ThirdEyeCacheRegistry;
-import org.apache.pinot.thirdeye.datasource.ThirdEyeDataSource;
 import org.apache.pinot.thirdeye.datasource.cache.QueryCache;
-import org.apache.pinot.thirdeye.datasource.csv.CSVThirdEyeDataSource;
 import org.apache.pinot.thirdeye.datasource.loader.DefaultTimeSeriesLoader;
 import org.apache.pinot.thirdeye.datasource.loader.TimeSeriesLoader;
+import org.apache.pinot.thirdeye.detection.cache.builder.AnomaliesCacheBuilder;
+import org.apache.pinot.thirdeye.detection.cache.builder.TimeSeriesCacheBuilder;
 import org.apache.pinot.thirdeye.detection.spi.model.AnomalySlice;
 import org.apache.pinot.thirdeye.detection.spi.model.EventSlice;
 import org.testng.Assert;
@@ -118,6 +117,9 @@ public class DataProviderTest {
     this.anomalyIds.add(this.anomalyDAO.save(makeAnomaly(null, detectionIds.get(0), 8000000L, 12000000L, Arrays.asList("a=1", "c=4"))));
     this.anomalyIds.add(this.anomalyDAO.save(makeAnomaly(null, detectionIds.get(1), 604800000L, 1209600000L, Collections.<String>emptyList())));
     this.anomalyIds.add(this.anomalyDAO.save(makeAnomaly(null, detectionIds.get(1), 14400000L, 18000000L, Arrays.asList("a=1", "c=3"))));
+    this.anomalyIds.add(this.anomalyDAO.save(makeAnomaly(null, detectionIds.get(1), 14400000L, 18000000L, Arrays.asList("a=1", "a=2", "c=3"))));
+    this.anomalyIds.add(this.anomalyDAO.save(makeAnomaly(null, detectionIds.get(1), 14400000L, 18000000L, Arrays.asList("a=1", "a=3", "c=3"))));
+    this.anomalyIds.add(this.anomalyDAO.save(makeAnomaly(null, detectionIds.get(1), 14400000L, 18000000L, Arrays.asList("a=1", "a=2", "c=3", "d=4"))));
 
     // metrics
     this.metricIds = new ArrayList<>();
@@ -137,32 +139,17 @@ public class DataProviderTest {
       this.data.addSeries(COL_TIME, this.data.getLongs(COL_TIME).multiply(1000));
     }
 
-    Map<String, DataFrame> datasets = new HashMap<>();
-    datasets.put("myDataset1", this.data);
-    datasets.put("myDataset2", this.data);
-
-    Map<Long, String> id2name = new HashMap<>();
-    id2name.put(this.metricIds.get(0), "value");
-    id2name.put(this.metricIds.get(1), "value");
-    id2name.put(this.metricIds.get(2), "value");
-
-    Map<String, ThirdEyeDataSource> dataSourceMap = new HashMap<>();
-    dataSourceMap.put("myDataSource", CSVThirdEyeDataSource.fromDataFrame(datasets, id2name));
-
-    this.cache = new QueryCache(dataSourceMap, Executors.newSingleThreadExecutor());
-    ThirdEyeCacheRegistry.getInstance().registerQueryCache(this.cache);
-    ThirdEyeCacheRegistry.initMetaDataCaches();
-
     // loaders
-    this.timeseriesLoader = new DefaultTimeSeriesLoader(this.metricDAO, this.datasetDAO, this.cache);
+    this.timeseriesLoader = new DefaultTimeSeriesLoader(this.metricDAO, this.datasetDAO, this.cache, null);
 
     // provider
-    this.provider = new DefaultDataProvider(this.metricDAO, this.datasetDAO, this.eventDAO, this.anomalyDAO, this.evaluationDAO,
-        this.timeseriesLoader, null, null);
+    this.provider = new DefaultDataProvider(this.metricDAO, this.datasetDAO, this.eventDAO, this.anomalyDAO,
+        this.evaluationDAO, this.timeseriesLoader, null, null,
+        TimeSeriesCacheBuilder.getInstance(), AnomaliesCacheBuilder.getInstance());
   }
 
   @AfterClass(alwaysRun = true)
-  public void afterMethod() {
+  public void afterClass() {
     this.testBase.cleanup();
   }
 
@@ -253,16 +240,16 @@ public class DataProviderTest {
   // anomalies
   //
 
-  @Test(expectedExceptions = IllegalArgumentException.class)
+  @Test(expectedExceptions = RuntimeException.class)
   public void testAnomalyInvalid() {
-    this.provider.fetchAnomalies(Collections.singleton(new AnomalySlice()), -1);
+    this.provider.fetchAnomalies(Collections.singleton(new AnomalySlice()));
   }
 
   @Test
   public void testAnomalySingle() {
     AnomalySlice slice = makeAnomalySlice(1209000000L, -1, Collections.<String>emptyList());
 
-    Collection<MergedAnomalyResultDTO> anomalies = this.provider.fetchAnomalies(Collections.singleton(slice), -1).get(slice);
+    Collection<MergedAnomalyResultDTO> anomalies = this.provider.fetchAnomalies(Collections.singleton(slice)).get(slice);
 
     Assert.assertEquals(anomalies.size(), 1);
     Assert.assertTrue(anomalies.contains(makeAnomaly(this.anomalyIds.get(2), detectionIds.get(1), 604800000L, 1209600000L, Collections.<String>emptyList())));
@@ -272,12 +259,25 @@ public class DataProviderTest {
   public void testAnomalyDimension() {
     AnomalySlice slice = makeAnomalySlice(0, -1, Arrays.asList("a=1", "c=3"));
 
-    Collection<MergedAnomalyResultDTO> anomalies = this.provider.fetchAnomalies(Collections.singleton(slice), -1).get(slice);
+    Collection<MergedAnomalyResultDTO> anomalies = this.provider.fetchAnomalies(Collections.singleton(slice)).get(slice);
 
-    Assert.assertEquals(anomalies.size(), 3);
+    Assert.assertEquals(anomalies.size(), 2);
     Assert.assertTrue(anomalies.contains(makeAnomaly(this.anomalyIds.get(0), detectionIds.get(0), 4000000L, 8000000L, Arrays.asList("a=1", "c=3", "b=2"))));
-    Assert.assertTrue(anomalies.contains(makeAnomaly(this.anomalyIds.get(2), detectionIds.get(1), 604800000L, 1209600000L, Collections.<String>emptyList())));
     Assert.assertTrue(anomalies.contains(makeAnomaly(this.anomalyIds.get(3), detectionIds.get(1), 14400000L, 18000000L, Arrays.asList("a=1", "c=3"))));
+
+    Assert.assertFalse(anomalies.contains(makeAnomaly(this.anomalyIds.get(2), detectionIds.get(1), 604800000L, 1209600000L, Collections.<String>emptyList())));
+  }
+
+  @Test
+  public void testAnomalyMultiDimensions() {
+    AnomalySlice slice = makeAnomalySlice(0, -1, Arrays.asList("a=1", "a=2", "c=3"));
+
+    Collection<MergedAnomalyResultDTO> anomalies = this.provider.fetchAnomalies(Collections.singleton(slice)).get(slice);
+    Assert.assertEquals(anomalies.size(), 2);
+    Assert.assertTrue(anomalies.contains(makeAnomaly(this.anomalyIds.get(4), detectionIds.get(1), 14400000L, 18000000L, Arrays.asList("a=1", "a=2", "c=3"))));
+    Assert.assertTrue(anomalies.contains(makeAnomaly(this.anomalyIds.get(6), detectionIds.get(1), 14400000L, 18000000L, Arrays.asList("a=1", "a=2", "c=3", "d=4"))));
+    Assert.assertFalse(anomalies.contains(makeAnomaly(this.anomalyIds.get(3), detectionIds.get(1), 14400000L, 18000000L, Arrays.asList("a=1", "c=3"))));
+    Assert.assertFalse(anomalies.contains(makeAnomaly(this.anomalyIds.get(5), detectionIds.get(1), 14400000L, 18000000L, Arrays.asList("a=1", "a=3", "c=3"))));
   }
 
   //
@@ -291,14 +291,14 @@ public class DataProviderTest {
     anomaly.setEndTime(end);
     anomaly.setId(id);
     anomaly.setChildIds(new HashSet<>());
+    anomaly.setType(AnomalyType.DEVIATION);
 
-    DimensionMap filters = new DimensionMap();
+    StringBuilder filterUrn = new StringBuilder();
     for (String fs : filterStrings) {
-      String[] parts = fs.split("=");
-      filters.put(parts[0], parts[1]);
+      filterUrn.append(":").append(fs);
     }
 
-    anomaly.setDimensions(filters);
+    anomaly.setMetricUrn("thirdeye:metric:1234" + filterUrn.toString());
     return anomaly;
   }
 
@@ -346,7 +346,7 @@ public class DataProviderTest {
       String[] parts = fs.split("=");
       filters.put(parts[0], parts[1]);
     }
-    return new AnomalySlice().withStart(start).withEnd(end).withFilters(filters).withDetectionCompNames(null);
+    return new AnomalySlice().withStart(start).withEnd(end).withFilters(filters);
   }
 
   private static MetricConfigDTO makeMetric(Long id, String metric, String dataset) {

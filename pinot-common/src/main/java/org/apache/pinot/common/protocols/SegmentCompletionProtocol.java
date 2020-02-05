@@ -23,7 +23,7 @@ import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import java.io.IOException;
 import java.util.concurrent.TimeUnit;
-import org.apache.pinot.common.utils.JsonUtils;
+import org.apache.pinot.spi.utils.JsonUtils;
 
 
 /*
@@ -213,6 +213,19 @@ public class SegmentCompletionProtocol {
         _segmentLocation = null;
         _memoryUsedBytes = MEMORY_USED_BYTES_DEFAULT;
         _segmentSizeBytes = SEGMENT_SIZE_BYTES_DEFAULT;
+      }
+
+      public Params(Params params) {
+        _offset = params.getOffset();
+        _segmentName = params.getSegmentName();
+        _instanceId = params.getInstanceId();
+        _numRows = params.getNumRows();
+        _buildTimeMillis = params.getBuildTimeMillis();
+        _waitTimeMillis = params.getWaitTimeMillis();
+        _extraTimeSec = params.getExtraTimeSec();
+        _segmentLocation = params.getSegmentLocation();
+        _memoryUsedBytes = params.getMemoryUsedBytes();
+        _segmentSizeBytes = params.getSegmentSizeBytes();
       }
 
       public Params withOffset(long offset) {

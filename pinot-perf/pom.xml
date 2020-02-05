@@ -25,7 +25,7 @@
   <parent>
     <artifactId>pinot</artifactId>
     <groupId>org.apache.pinot</groupId>
-    <version>0.2.0-SNAPSHOT</version>
+    <version>0.3.0-SNAPSHOT</version>
   </parent>
   <artifactId>pinot-perf</artifactId>
   <name>Pinot Perf</name>
@@ -52,7 +52,7 @@
     </dependency>
     <dependency>
       <groupId>org.apache.pinot</groupId>
-      <artifactId>pinot-connector-kafka-${kafka.version}</artifactId>
+      <artifactId>pinot-kafka-${kafka.version}</artifactId>
       <version>${project.version}</version>
       <scope>runtime</scope>
     </dependency>

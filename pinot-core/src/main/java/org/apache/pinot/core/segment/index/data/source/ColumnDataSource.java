@@ -19,7 +19,7 @@
 package org.apache.pinot.core.segment.index.data.source;
 
 import com.google.common.base.Preconditions;
-import org.apache.pinot.common.data.FieldSpec;
+import org.apache.pinot.spi.data.FieldSpec;
 import org.apache.pinot.core.common.Block;
 import org.apache.pinot.core.common.Constants;
 import org.apache.pinot.core.common.DataSource;
@@ -189,5 +189,9 @@ public final class ColumnDataSource extends DataSource {
   @Override
   public String getOperatorName() {
     return _operatorName;
+  }
+
+  public DataFileReader getForwardIndex() {
+    return _forwardIndex;
   }
 }

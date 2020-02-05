@@ -71,16 +71,17 @@ public class PinotQuery2BrokerRequestConverter {
 
     //TODO: these should not be part of the query?
     //brokerRequest.setEnableTrace();
-    //brokerRequest.setDebugOptions();
+    brokerRequest.setDebugOptions(pinotQuery.getDebugOptions());
     brokerRequest.setQueryOptions(pinotQuery.getQueryOptions());
     //brokerRequest.setBucketHashKey();
     //brokerRequest.setDuration();
+    brokerRequest.setPinotQuery(pinotQuery);
 
     return brokerRequest;
   }
 
   private void convertOrderBy(PinotQuery pinotQuery, BrokerRequest brokerRequest) {
-    if (brokerRequest.getSelections() == null || pinotQuery.getOrderByList() == null) {
+    if (pinotQuery.getOrderByList() == null) {
       return;
     }
     List<SelectionSort> sortSequenceList = new ArrayList<>();
@@ -94,7 +95,10 @@ public class PinotQuery2BrokerRequestConverter {
       sortSequenceList.add(selectionSort);
     }
     if (!sortSequenceList.isEmpty()) {
-      brokerRequest.getSelections().setSelectionSortSequence(sortSequenceList);
+      if (brokerRequest.getSelections() != null) {
+        brokerRequest.getSelections().setSelectionSortSequence(sortSequenceList);
+      }
+      brokerRequest.setOrderBy(sortSequenceList);
     }
   }
 
@@ -116,6 +120,10 @@ public class PinotQuery2BrokerRequestConverter {
     List<AggregationInfo> aggregationInfoList = null;
     for (Expression expression : pinotQuery.getSelectList()) {
       ExpressionType type = expression.getType();
+      if (type == ExpressionType.FUNCTION && expression.getFunctionCall().getOperator().equalsIgnoreCase(SqlKind.AS.toString())) {
+        expression = expression.getFunctionCall().getOperands().get(0);
+        type = expression.getType();
+      }
       switch (type) {
         case LITERAL:
           if (selection == null) {
@@ -130,9 +138,6 @@ public class PinotQuery2BrokerRequestConverter {
           selection.addToSelectionColumns(expression.getIdentifier().getName());
           break;
         case FUNCTION:
-          if (expression.getFunctionCall().getOperator().equalsIgnoreCase(SqlKind.AS.toString())) {
-            expression = expression.getFunctionCall().getOperands().get(0);
-          }
           Function functionCall = expression.getFunctionCall();
           String functionName = functionCall.getOperator();
           if (FunctionDefinitionRegistry.isAggFunc(functionName)) {
@@ -151,7 +156,9 @@ public class PinotQuery2BrokerRequestConverter {
       }
     }
 
-    if (selection != null) {
+    if (aggregationInfoList != null && aggregationInfoList.size() > 0) {
+      brokerRequest.setAggregationsInfo(aggregationInfoList);
+    } else if (selection != null) {
       if (pinotQuery.isSetOffset()) {
         selection.setOffset(pinotQuery.getOffset());
       }
@@ -159,10 +166,6 @@ public class PinotQuery2BrokerRequestConverter {
         selection.setSize(pinotQuery.getLimit());
       }
       brokerRequest.setSelections(selection);
-    }
-
-    if (aggregationInfoList != null && aggregationInfoList.size() > 0) {
-      brokerRequest.setAggregationsInfo(aggregationInfoList);
     }
   }
 

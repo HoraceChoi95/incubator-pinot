@@ -64,8 +64,13 @@ $ mvn clean install -DskipTests -Pbin-dist
 
 # Run the Quick Demo
 $ cd pinot-distribution/target/apache-pinot-incubating-<version>-SNAPSHOT-bin
-$ bin/quick-start-offline.sh
+$ bin/quick-start-batch.sh
 ```
+
+## Deploy Pinot on Kubernetes
+Please refer to [Kubernetes Readme](kubernetes/helm/README.md) to deploy Pinot using [Helm](https://helm.sh/docs/using_helm/#installing-helm) and load demo data set.
+
+Pinot also provides k8s integration with interactive query engine [Presto](kubernetes/helm/presto-coordinator.yaml) and data visualization tool [Apache Superset](kubernetes/helm/superset.yaml).
 
 ## Getting Involved
  - Ask questions on [Apache Pinot Slack](https://communityinviter.com/apps/apache-pinot/apache-pinot)
@@ -73,7 +78,7 @@ $ bin/quick-start-offline.sh
    dev-subscribe@pinot.apache.org (subscribe to pinot-dev mailing list)  
    dev@pinot.apache.org (posting to pinot-dev mailing list)  
    users-subscribe@pinot.apache.org (subscribe to pinot-user mailing list)  
-   users@pinot.apache.org (positng to pinot-user mailing list)
+   users@pinot.apache.org (posting to pinot-user mailing list)
 
 ## Documentation
 Check out [Pinot documentation](https://pinot.readthedocs.io) for a complete description of Pinot's features.

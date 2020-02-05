@@ -36,4 +36,8 @@ public class NullValueVectorReaderImpl implements NullValueVectorReader {
     return _nullBitmap.contains(docId);
   }
 
+  @Override
+  public ImmutableRoaringBitmap getNullBitmap() {
+    return _nullBitmap;
+  }
 }

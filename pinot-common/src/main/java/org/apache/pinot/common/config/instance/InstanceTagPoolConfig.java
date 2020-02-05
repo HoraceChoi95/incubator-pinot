@@ -18,69 +18,54 @@
  */
 package org.apache.pinot.common.config.instance;
 
-import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
+import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonProperty;
+import com.fasterxml.jackson.annotation.JsonPropertyDescription;
+import com.google.common.base.Preconditions;
 import java.util.List;
-import org.apache.pinot.common.config.ConfigDoc;
-import org.apache.pinot.common.config.ConfigKey;
+import javax.annotation.Nullable;
+import org.apache.pinot.common.config.BaseJsonConfig;
 
 
-@JsonIgnoreProperties(ignoreUnknown = true)
-public class InstanceTagPoolConfig {
+public class InstanceTagPoolConfig extends BaseJsonConfig {
 
-  @ConfigKey("tag")
-  @ConfigDoc(value = "Tag of the instances to select", mandatory = true)
-  private String _tag;
+  @JsonPropertyDescription("Tag of the instances to select (mandatory)")
+  private final String _tag;
 
-  @ConfigKey("poolBased")
-  @ConfigDoc("Whether to use pool based selection, false by default")
-  private boolean _poolBased;
+  @JsonPropertyDescription("Whether to use pool based selection, false by default")
+  private final boolean _poolBased;
 
-  @ConfigKey("numPools")
-  @ConfigDoc("Number of pools to select for pool based selection, contradict to pools, select all pools if neither of them are specified")
-  private int _numPools;
+  @JsonPropertyDescription("Number of pools to select for pool based selection, contradict to pools, select all pools if neither of them are specified")
+  private final int _numPools;
 
-  @ConfigKey("pools")
-  @ConfigDoc("Pools to select for pool based selection, contradict to numPools, select all pools if neither of them are specified")
-  private List<Integer> _pools;
+  @JsonPropertyDescription("Pools to select for pool based selection, contradict to numPools, select all pools if neither of them are specified")
+  private final List<Integer> _pools;
 
-  @JsonProperty
+  @JsonCreator
+  public InstanceTagPoolConfig(@JsonProperty(value = "tag", required = true) String tag,
+      @JsonProperty("poolBased") boolean poolBased, @JsonProperty("numPools") int numPools,
+      @JsonProperty("pools") @Nullable List<Integer> pools) {
+    Preconditions.checkArgument(tag != null, "'tag' must be configured");
+    _tag = tag;
+    _poolBased = poolBased;
+    _numPools = numPools;
+    _pools = pools;
+  }
+
   public String getTag() {
     return _tag;
   }
 
-  @JsonProperty
-  public void setTag(String tag) {
-    _tag = tag;
-  }
-
-  @JsonProperty
   public boolean isPoolBased() {
     return _poolBased;
   }
 
-  @JsonProperty
-  public void setPoolBased(boolean poolBased) {
-    _poolBased = poolBased;
-  }
-
-  @JsonProperty
   public int getNumPools() {
     return _numPools;
   }
 
-  @JsonProperty
-  public void setNumPools(int numPools) {
-    _numPools = numPools;
-  }
-
-  @JsonProperty
+  @Nullable
   public List<Integer> getPools() {
     return _pools;
-  }
-
-  @JsonProperty
-  public void setPools(List<Integer> pools) {
-    _pools = pools;
   }
 }

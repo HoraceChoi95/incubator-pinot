@@ -25,7 +25,7 @@
   <parent>
     <artifactId>pinot</artifactId>
     <groupId>org.apache.pinot</groupId>
-    <version>0.2.0-SNAPSHOT</version>
+    <version>0.3.0-SNAPSHOT</version>
   </parent>
   <artifactId>pinot-integration-tests</artifactId>
   <name>Pinot Integration Tests</name>
@@ -90,8 +90,6 @@
                 <exclude>**/RealtimeClusterIntegrationTest.java</exclude>
                 <!-- Covered by ConvertToRawIndexMinionClusterIntegrationTest -->
                 <exclude>**/HybridClusterIntegrationTest.java</exclude>
-                <!-- TODO: re-enable the Minion tests when upgrading to Helix 0.9.1 -->
-                <exclude>**/*MinionClusterIntegrationTest.java</exclude>
               </excludes>
             </configuration>
           </plugin>
@@ -119,7 +117,7 @@
   <dependencies>
     <dependency>
       <groupId>org.apache.pinot</groupId>
-      <artifactId>pinot-api</artifactId>
+      <artifactId>pinot-java-client</artifactId>
     </dependency>
     <dependency>
       <groupId>org.apache.pinot</groupId>
@@ -130,12 +128,8 @@
       <artifactId>pinot-tools</artifactId>
       <exclusions>
         <exclusion>
-          <groupId>org.apache.hadoop</groupId>
-          <artifactId>hadoop-hdfs</artifactId>
-        </exclusion>
-        <exclusion>
-          <groupId>org.apache.hadoop</groupId>
-          <artifactId>hadoop-mapreduce-client-core</artifactId>
+          <groupId>org.apache.pinot</groupId>
+          <artifactId>pinot-orc</artifactId>
         </exclusion>
       </exclusions>
     </dependency>
@@ -193,17 +187,18 @@
     </dependency>
     <dependency>
       <groupId>org.apache.pinot</groupId>
-      <artifactId>pinot-hadoop</artifactId>
-    </dependency>
-    <dependency>
-      <groupId>org.apache.pinot</groupId>
       <artifactId>pinot-minion</artifactId>
       <version>${project.version}</version>
       <type>test-jar</type>
     </dependency>
     <dependency>
       <groupId>org.apache.pinot</groupId>
-      <artifactId>pinot-connector-kafka-${kafka.version}</artifactId>
+      <artifactId>pinot-avro</artifactId>
+      <version>${project.version}</version>
+    </dependency>
+    <dependency>
+      <groupId>org.apache.pinot</groupId>
+      <artifactId>pinot-kafka-${kafka.version}</artifactId>
       <version>${project.version}</version>
       <scope>runtime</scope>
     </dependency>
@@ -214,10 +209,6 @@
     <dependency>
       <groupId>org.apache.commons</groupId>
       <artifactId>commons-lang3</artifactId>
-    </dependency>
-    <dependency>
-      <groupId>org.apache.avro</groupId>
-      <artifactId>avro</artifactId>
     </dependency>
     <dependency>
       <groupId>javax.servlet</groupId>
@@ -232,42 +223,6 @@
       <artifactId>jnr-posix</artifactId>
     </dependency>
     <dependency>
-      <groupId>org.apache.hadoop</groupId>
-      <artifactId>hadoop-common</artifactId>
-      <exclusions>
-        <exclusion>
-          <groupId>commons-logging</groupId>
-          <artifactId>commons-logging</artifactId>
-        </exclusion>
-        <exclusion>
-          <groupId>commons-lang</groupId>
-          <artifactId>commons-lang</artifactId>
-        </exclusion>
-        <exclusion>
-          <groupId>org.apache.commons</groupId>
-          <artifactId>commons-math3</artifactId>
-        </exclusion>
-      </exclusions>
-    </dependency>
-    <dependency>
-      <groupId>org.apache.hadoop</groupId>
-      <artifactId>hadoop-minicluster</artifactId>
-      <exclusions>
-        <exclusion>
-          <groupId>commons-logging</groupId>
-          <artifactId>commons-logging</artifactId>
-        </exclusion>
-        <exclusion>
-          <groupId>commons-lang</groupId>
-          <artifactId>commons-lang</artifactId>
-        </exclusion>
-        <exclusion>
-          <groupId>org.apache.zookeeper</groupId>
-          <artifactId>zookeeper</artifactId>
-        </exclusion>
-      </exclusions>
-    </dependency>
-    <dependency>
       <groupId>org.apache.zookeeper</groupId>
       <artifactId>zookeeper</artifactId>
     </dependency>
@@ -276,26 +231,16 @@
       <artifactId>commons-math3</artifactId>
     </dependency>
     <dependency>
-      <groupId>org.apache.hadoop</groupId>
-      <artifactId>hadoop-client</artifactId>
-      <exclusions>
-        <exclusion>
-          <groupId>commons-logging</groupId>
-          <artifactId>commons-logging</artifactId>
-        </exclusion>
-        <exclusion>
-          <groupId>commons-lang</groupId>
-          <artifactId>commons-lang</artifactId>
-        </exclusion>
-      </exclusions>
-    </dependency>
-    <dependency>
       <groupId>commons-lang</groupId>
       <artifactId>commons-lang</artifactId>
     </dependency>
     <dependency>
       <groupId>commons-logging</groupId>
       <artifactId>commons-logging</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>org.mockito</groupId>
+      <artifactId>mockito-core</artifactId>
     </dependency>
   </dependencies>
 </project>

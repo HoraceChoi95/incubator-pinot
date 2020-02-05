@@ -23,7 +23,7 @@ import java.io.IOException;
 import org.apache.pinot.common.config.TagNameUtils;
 import org.apache.pinot.common.metadata.ZKMetadataProvider;
 import org.apache.pinot.common.utils.CommonConstants;
-import org.apache.pinot.common.utils.JsonUtils;
+import org.apache.pinot.spi.utils.JsonUtils;
 import org.testng.Assert;
 import org.testng.annotations.AfterClass;
 import org.testng.annotations.BeforeClass;
@@ -102,6 +102,16 @@ public class ControllerTenantTest extends ControllerTest {
       Assert.assertEquals(_helixAdmin
               .getInstancesInClusterWithTag(getHelixClusterName(), CommonConstants.Helix.UNTAGGED_BROKER_INSTANCE).size(),
           NUM_INSTANCES - (NUM_BROKER_TAGS - i) * NUM_BROKERS_PER_TAG);
+    }
+  }
+
+  @Test
+  public void testEmptyServerTenant() {
+    try {
+      sendGetRequest(_controllerRequestURLBuilder.forServerTenantGet("doesn't_exist"));
+      Assert.fail();
+    } catch (Exception e) {
+
     }
   }
 

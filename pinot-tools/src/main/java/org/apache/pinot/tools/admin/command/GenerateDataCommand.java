@@ -25,14 +25,14 @@ import java.util.LinkedList;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
 import org.apache.commons.lang.math.IntRange;
-import org.apache.pinot.common.data.FieldSpec;
-import org.apache.pinot.common.data.FieldSpec.DataType;
-import org.apache.pinot.common.data.FieldSpec.FieldType;
-import org.apache.pinot.common.data.Schema;
-import org.apache.pinot.common.data.Schema.SchemaBuilder;
-import org.apache.pinot.common.data.TimeFieldSpec;
-import org.apache.pinot.common.utils.JsonUtils;
-import org.apache.pinot.core.data.readers.FileFormat;
+import org.apache.pinot.spi.data.FieldSpec;
+import org.apache.pinot.spi.data.FieldSpec.DataType;
+import org.apache.pinot.spi.data.FieldSpec.FieldType;
+import org.apache.pinot.spi.data.Schema;
+import org.apache.pinot.spi.data.Schema.SchemaBuilder;
+import org.apache.pinot.spi.data.TimeFieldSpec;
+import org.apache.pinot.spi.utils.JsonUtils;
+import org.apache.pinot.spi.data.readers.FileFormat;
 import org.apache.pinot.tools.Command;
 import org.apache.pinot.tools.data.generator.DataGenerator;
 import org.apache.pinot.tools.data.generator.DataGeneratorSpec;
@@ -101,7 +101,7 @@ public class GenerateDataCommand extends AbstractBaseAdminCommand implements Com
 
   @Override
   public String description() {
-    return "Generate random data as per the provided scema";
+    return "Generate random data as per the provided schema";
   }
 
   @Override

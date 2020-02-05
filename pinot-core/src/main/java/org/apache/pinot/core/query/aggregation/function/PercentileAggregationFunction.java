@@ -49,6 +49,11 @@ public class PercentileAggregationFunction implements AggregationFunction<Double
   }
 
   @Override
+  public String getResultColumnName(String column) {
+    return AggregationFunctionType.PERCENTILE.getName().toLowerCase() + _percentile + "(" + column + ")";
+  }
+
+  @Override
   public void accept(AggregationFunctionVisitorBase visitor) {
     visitor.visit(this);
   }
@@ -129,6 +134,11 @@ public class PercentileAggregationFunction implements AggregationFunction<Double
   @Override
   public ColumnDataType getIntermediateResultColumnType() {
     return ColumnDataType.OBJECT;
+  }
+
+  @Override
+  public ColumnDataType getFinalResultColumnType() {
+    return ColumnDataType.DOUBLE;
   }
 
   @Override

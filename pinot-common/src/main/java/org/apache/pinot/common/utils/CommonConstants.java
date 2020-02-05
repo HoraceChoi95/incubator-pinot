@@ -41,6 +41,9 @@ public class CommonConstants {
     public static final String LEAD_CONTROLLER_RESOURCE_NAME = "leadControllerResource";
 
     public static final String LEAD_CONTROLLER_RESOURCE_ENABLED_KEY = "RESOURCE_ENABLED";
+    public static final String ENABLE_CASE_INSENSITIVE_PQL_KEY = "enable.case.insensitive.pql";
+
+
 
     // More information on why these numbers are set can be found in the following doc:
     // https://cwiki.apache.org/confluence/display/PINOT/Controller+Separation+between+Helix+and+Pinot
@@ -109,6 +112,7 @@ public class CommonConstants {
         return ServerType.REALTIME;
       }
     }
+
     public static final String SET_INSTANCE_ID_TO_HOSTNAME_KEY = "pinot.set.instance.id.to.hostname";
 
     public static final String KEY_OF_SERVER_NETTY_PORT = "pinot.server.netty.port";
@@ -138,10 +142,6 @@ public class CommonConstants {
     public static final String CONFIG_OF_DELAY_SHUTDOWN_TIME_MS = "pinot.broker.delayShutdownTimeMs";
     public static final long DEFAULT_DELAY_SHUTDOWN_TIME_MS = 10_000L;
     public static final String CONFIG_OF_ENABLE_TABLE_LEVEL_METRICS = "pinot.broker.enableTableLevelMetrics";
-    public static final String CONFIG_OF_REQUEST_HANDLER_TYPE = "pinot.broker.requestHandlerType";
-    public static final String SINGLE_CONNECTION_REQUEST_HANDLER_TYPE = "singleConnection";
-    public static final String CONNECTION_POOL_REQUEST_HANDLER_TYPE = "connectionPool";
-    public static final String DEFAULT_REQUEST_HANDLER_TYPE = SINGLE_CONNECTION_REQUEST_HANDLER_TYPE;
 
     public static final String CONFIG_OF_BROKER_QUERY_RESPONSE_LIMIT = "pinot.broker.query.response.limit";
     public static final int DEFAULT_BROKER_QUERY_RESPONSE_LIMIT = Integer.MAX_VALUE;
@@ -260,21 +260,6 @@ public class CommonConstants {
         "pinot.server.shutdown.resourceCheckIntervalMs";
     public static final long DEFAULT_SHUTDOWN_RESOURCE_CHECK_INTERVAL_MS = 10_000L;
 
-    // TODO: remove the deprecated config keys in the new release
-    @Deprecated
-    public static final String CONFIG_OF_STARTER_ENABLE_SEGMENTS_LOADING_CHECK =
-        "pinot.server.starter.enableSegmentsLoadingCheck";
-    @Deprecated
-    public static final String CONFIG_OF_STARTER_TIMEOUT_IN_SECONDS = "pinot.server.starter.timeoutInSeconds";
-    @Deprecated
-    public static final String CONFIG_OF_ENABLE_SHUTDOWN_DELAY = "pinot.server.instance.enable.shutdown.delay";
-    @Deprecated
-    public static final String CONFIG_OF_INSTANCE_MAX_SHUTDOWN_WAIT_TIME =
-        "pinot.server.instance.starter.maxShutdownWaitTime";
-    @Deprecated
-    public static final String CONFIG_OF_INSTANCE_CHECK_INTERVAL_TIME =
-        "pinot.server.instance.starter.checkIntervalTime";
-
     public static final String DEFAULT_COLUMN_MIN_MAX_VALUE_GENERATOR_MODE = "TIME";
 
     public static class SegmentCompletionProtocol {
@@ -337,8 +322,10 @@ public class CommonConstants {
        * During realtime segment completion, the value of this enum decides how  non-winner servers should replace  the completed segment.
        */
       public enum CompletionMode {
-        DEFAULT, // default behavior - if the in memory segment in the non-winner server is equivalent to the committed segment, then build and replace, else download
-        DOWNLOAD // non-winner servers always download the segment, never build it
+        // default behavior - if the in memory segment in the non-winner server is equivalent to the committed segment, then build and replace, else download
+        DEFAULT,
+        // non-winner servers always download the segment, never build it
+        DOWNLOAD
       }
 
       public static final String STATUS = "segment.realtime.status";
@@ -386,27 +373,13 @@ public class CommonConstants {
       public static String REPLICA_GROUP_SEGMENT_ASSIGNMENT_STRATEGY = "ReplicaGroupSegmentAssignmentStrategy";
     }
 
+    public static class BuiltInVirtualColumn {
+      public static final String DOCID = "$docId";
+      public static final String HOSTNAME = "$hostName";
+      public static final String SEGMENTNAME = "$segmentName";
+    }
+
     @Deprecated
     public static final String TABLE_NAME = "segment.table.name";
-  }
-
-  public static class SegmentOperations {
-    public static class HadoopSegmentOperations {
-      public static final String PRINCIPAL = "hadoop.kerberos.principle";
-      public static final String KEYTAB = "hadoop.kerberos.keytab";
-      public static final String HADOOP_CONF_PATH = "hadoop.conf.path";
-    }
-
-    public static class AzureSegmentOperations {
-      public static final String ACCOUNT_ID = "accountId";
-      public static final String AUTH_ENDPOINT = "authEndpoint";
-      public static final String CLIENT_ID = "clientId";
-      public static final String CLIENT_SECRET = "clientSecret";
-    }
-
-    public static final String RETRY = "retry.count";
-    public static final int RETRY_DEFAULT = 3;
-    public static final String RETRY_WAITIME_MS = "retry.wait.ms";
-    public static final int RETRY_WAITIME_MS_DEFAULT = 100;
   }
 }

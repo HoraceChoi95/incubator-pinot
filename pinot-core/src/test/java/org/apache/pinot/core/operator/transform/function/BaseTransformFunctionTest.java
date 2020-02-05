@@ -28,13 +28,13 @@ import java.util.Set;
 import java.util.concurrent.TimeUnit;
 import org.apache.commons.io.FileUtils;
 import org.apache.commons.lang3.ArrayUtils;
-import org.apache.pinot.common.data.DimensionFieldSpec;
-import org.apache.pinot.common.data.FieldSpec;
-import org.apache.pinot.common.data.Schema;
-import org.apache.pinot.common.data.TimeFieldSpec;
+import org.apache.pinot.spi.data.DimensionFieldSpec;
+import org.apache.pinot.spi.data.FieldSpec;
+import org.apache.pinot.spi.data.Schema;
+import org.apache.pinot.spi.data.TimeFieldSpec;
 import org.apache.pinot.common.segment.ReadMode;
 import org.apache.pinot.core.common.DataSource;
-import org.apache.pinot.core.data.GenericRow;
+import org.apache.pinot.spi.data.readers.GenericRow;
 import org.apache.pinot.core.data.readers.GenericRowRecordReader;
 import org.apache.pinot.core.indexsegment.IndexSegment;
 import org.apache.pinot.core.indexsegment.generator.SegmentGeneratorConfig;
@@ -154,6 +154,13 @@ public abstract class BaseTransformFunctionTest {
       Assert.assertEquals(floatValues[i], (float) expectedValues[i]);
       Assert.assertEquals(doubleValues[i], expectedValues[i]);
       Assert.assertEquals(stringValues[i], Double.toString(expectedValues[i]));
+    }
+  }
+
+  protected void testTransformFunction(TransformFunction transformFunction, String[] expectedValues) {
+    String[] stringValues = transformFunction.transformToStringValuesSV(_projectionBlock);
+    for (int i = 0; i < NUM_ROWS; i++) {
+      Assert.assertEquals(stringValues[i], expectedValues[i]);
     }
   }
 

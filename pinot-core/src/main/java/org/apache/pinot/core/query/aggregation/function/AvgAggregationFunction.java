@@ -18,7 +18,7 @@
  */
 package org.apache.pinot.core.query.aggregation.function;
 
-import org.apache.pinot.common.data.FieldSpec.DataType;
+import org.apache.pinot.spi.data.FieldSpec.DataType;
 import org.apache.pinot.common.function.AggregationFunctionType;
 import org.apache.pinot.common.utils.DataSchema.ColumnDataType;
 import org.apache.pinot.core.common.BlockValSet;
@@ -36,11 +36,6 @@ public class AvgAggregationFunction implements AggregationFunction<AvgPair, Doub
   @Override
   public AggregationFunctionType getType() {
     return AggregationFunctionType.AVG;
-  }
-
-  @Override
-  public String getColumnName(String column) {
-    return AggregationFunctionType.AVG.getName() + "_" + column;
   }
 
   @Override
@@ -176,6 +171,11 @@ public class AvgAggregationFunction implements AggregationFunction<AvgPair, Doub
   @Override
   public ColumnDataType getIntermediateResultColumnType() {
     return ColumnDataType.OBJECT;
+  }
+
+  @Override
+  public ColumnDataType getFinalResultColumnType() {
+    return ColumnDataType.DOUBLE;
   }
 
   @Override

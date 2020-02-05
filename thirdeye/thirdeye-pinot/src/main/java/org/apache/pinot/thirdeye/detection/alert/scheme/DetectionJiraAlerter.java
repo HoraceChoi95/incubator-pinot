@@ -27,7 +27,6 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Properties;
 import java.util.Set;
-import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 import org.apache.pinot.thirdeye.anomaly.ThirdEyeAnomalyConfiguration;
 import org.apache.pinot.thirdeye.anomalydetection.context.AnomalyResult;
@@ -120,20 +119,20 @@ public class DetectionJiraAlerter extends DetectionAlertScheme {
   }
 
   private JiraEntity buildJiraEntity(DetectionAlertFilterNotification notification, Set<MergedAnomalyResultDTO> anomalies) {
-    Map<String, Object> notificationSchemeProps = notification.getNotificationSchemeProps();
-    if (notificationSchemeProps == null || notificationSchemeProps.get(PROP_JIRA_SCHEME) == null) {
+    DetectionAlertConfigDTO subsetSubsConfig = notification.getSubscriptionConfig();
+    if (subsetSubsConfig.getAlertSchemes().get(PROP_JIRA_SCHEME) == null) {
       throw new IllegalArgumentException("Jira not configured in subscription group " + this.subsConfig.getId());
     }
 
     Properties jiraClientConfig = new Properties();
-    jiraClientConfig.putAll(ConfigUtils.getMap(notificationSchemeProps.get(PROP_JIRA_SCHEME)));
+    jiraClientConfig.putAll(ConfigUtils.getMap(subsetSubsConfig.getAlertSchemes().get(PROP_JIRA_SCHEME)));
 
     List<AnomalyResult> anomalyResultListOfGroup = new ArrayList<>(anomalies);
     anomalyResultListOfGroup.sort(COMPARATOR_DESC);
 
     BaseNotificationContent content = super.buildNotificationContent(jiraClientConfig);
 
-    return new JiraContentFormatter(this.jiraAdminConfig, jiraClientConfig, content, this.teConfig, subsConfig)
+    return new JiraContentFormatter(this.jiraAdminConfig, jiraClientConfig, content, this.teConfig, subsetSubsConfig)
         .getJiraEntity(notification.getDimensionFilters(), anomalyResultListOfGroup);
   }
 
@@ -143,12 +142,10 @@ public class DetectionJiraAlerter extends DetectionAlertScheme {
     for (Map.Entry<DetectionAlertFilterNotification, Set<MergedAnomalyResultDTO>> result : results.getResult().entrySet()) {
       try {
         JiraEntity jiraEntity = buildJiraEntity(result.getKey(), result.getValue());
+
+        // Fetch the most recent reported issue
         List<Issue> issues = jiraClient.getIssues(jiraEntity.getJiraProject(), jiraEntity.getLabels(),
             this.jiraAdminConfig.getJiraUser(), jiraEntity.getMergeGap());
-        LOG.info("Fetched {} jira issues using project={}, reporter={}, labels IN (\"{}\"), created>=-{}d",
-            issues.size(), jiraEntity.getJiraProject(), this.jiraAdminConfig.getJiraUser(),
-            String.join(",", jiraEntity.getLabels()), TimeUnit.MILLISECONDS.toDays(jiraEntity.getMergeGap()));
-
         Optional<Issue> latestJiraIssue = issues.stream().max(
               (o1, o2) -> o2.getCreationDate().compareTo(o1.getCreationDate()));
 
@@ -162,8 +159,7 @@ public class DetectionJiraAlerter extends DetectionAlertScheme {
           LOG.info("Jira updated {}, anomalies reported = {}", latestJiraIssue.get().getKey(), result.getValue().size());
         }
       } catch (IllegalArgumentException e) {
-        LOG.warn("Skipping! Found illegal arguments while sending {} anomalies for alert {}."
-            + " Exception message: ", result.getValue().size(), this.subsConfig.getId(), e);
+        super.handleAlertFailure(result.getValue().size(), e);
       }
     }
   }

@@ -31,31 +31,26 @@
 
   <groupId>org.apache.pinot</groupId>
   <artifactId>pinot</artifactId>
-  <version>0.2.0-SNAPSHOT</version>
+  <version>0.3.0-SNAPSHOT</version>
   <packaging>pom</packaging>
   <name>Pinot</name>
   <description>A realtime distributed OLAP datastore</description>
   <url>https://pinot.apache.org/</url>
 
   <modules>
+    <module>pinot-spi</module>
     <module>pinot-broker</module>
     <module>pinot-common</module>
-    <module>pinot-api</module>
+    <module>pinot-clients</module>
     <module>pinot-server</module>
     <module>pinot-core</module>
     <module>pinot-controller</module>
-    <module>pinot-hadoop</module>
+    <module>pinot-minion</module>
+    <module>pinot-plugins</module>
     <module>pinot-tools</module>
     <module>pinot-perf</module>
-    <module>pinot-transport</module>
     <module>pinot-integration-tests</module>
     <module>pinot-distribution</module>
-    <module>pinot-minion</module>
-    <module>pinot-hadoop-filesystem</module>
-    <module>pinot-azure-filesystem</module>
-    <module>pinot-orc</module>
-    <module>pinot-parquet</module>
-    <module>pinot-connectors</module>
   </modules>
 
   <licenses>
@@ -96,6 +91,7 @@
 
   <scm>
     <developerConnection>scm:git:git@github.com:apache/incubator-pinot.git</developerConnection>
+    <tag>HEAD</tag>
   </scm>
 
   <!-- Apache project inception year for generating correct NOTICE file for jar bundle. -->
@@ -118,7 +114,7 @@
     <!-- Configuration for unit/integration tests section 1 of 3 (properties) ENDS HERE.-->
     <avro.version>1.7.6</avro.version>
     <parquet.version>1.8.0</parquet.version>
-    <helix.version>0.8.4</helix.version>
+    <helix.version>0.9.4</helix.version>
     <zkclient.version>0.7</zkclient.version>
     <jackson.version>2.9.8</jackson.version>
     <async-http-client.version>1.9.21</async-http-client.version>
@@ -141,10 +137,22 @@
     kafka dependency is still explicitly defined in pinot-integration-tests, pinot-tools and pinot-perf pom files.
     To change kafka connector dependency, we only need to update this version number config.
     TODO: figure out a way to inject kafka dependency instead of explicitly setting the kafka module dependency -->
-    <kafka.version>0.9</kafka.version>
+    <kafka.version>2.0</kafka.version>
   </properties>
 
   <profiles>
+    <profile>
+      <id>kafka-0.9</id>
+      <activation>
+        <property>
+          <name>kafka.version</name>
+          <value>0.9</value>
+        </property>
+      </activation>
+      <properties>
+        <kafka.version>0.9</kafka.version>
+      </properties>
+    </profile>
     <profile>
       <id>kafka-2.0</id>
       <activation>
@@ -228,7 +236,17 @@
       </dependency>
       <dependency>
         <groupId>org.apache.pinot</groupId>
-        <artifactId>pinot-api</artifactId>
+        <artifactId>pinot-avro</artifactId>
+        <version>${project.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>org.apache.pinot</groupId>
+        <artifactId>pinot-spi</artifactId>
+        <version>${project.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>org.apache.pinot</groupId>
+        <artifactId>pinot-java-client</artifactId>
         <version>${project.version}</version>
       </dependency>
       <dependency>
@@ -253,6 +271,11 @@
       </dependency>
       <dependency>
         <groupId>org.apache.pinot</groupId>
+        <artifactId>pinot-spark</artifactId>
+        <version>${project.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>org.apache.pinot</groupId>
         <artifactId>pinot-server</artifactId>
         <version>${project.version}</version>
       </dependency>
@@ -268,22 +291,17 @@
       </dependency>
       <dependency>
         <groupId>org.apache.pinot</groupId>
-        <artifactId>pinot-hadoop-filesystem</artifactId>
+        <artifactId>pinot-hdfs</artifactId>
         <version>${project.version}</version>
       </dependency>
       <dependency>
         <groupId>org.apache.pinot</groupId>
-        <artifactId>pinot-azure-filesystem</artifactId>
+        <artifactId>pinot-azure</artifactId>
         <version>${project.version}</version>
       </dependency>
       <dependency>
         <groupId>org.apache.pinot</groupId>
         <artifactId>pinot-orc</artifactId>
-        <version>${project.version}</version>
-      </dependency>
-      <dependency>
-        <groupId>org.apache.pinot</groupId>
-        <artifactId>pinot-transport</artifactId>
         <version>${project.version}</version>
       </dependency>
       <dependency>
@@ -435,6 +453,26 @@
         <version>2.0.1.Final</version>
       </dependency>
       <dependency>
+        <groupId>javax.activation</groupId>
+        <artifactId>activation</artifactId>
+        <version>1.1.1</version>
+      </dependency>
+      <dependency>
+        <groupId>javax.xml.bind</groupId>
+        <artifactId>jaxb-api</artifactId>
+        <version>2.3.0</version>
+      </dependency>
+      <dependency>
+        <groupId>com.sun.xml.bind</groupId>
+        <artifactId>jaxb-core</artifactId>
+        <version>2.3.0</version>
+      </dependency>
+      <dependency>
+        <groupId>com.sun.xml.bind</groupId>
+        <artifactId>jaxb-impl</artifactId>
+        <version>2.3.0</version>
+      </dependency>
+      <dependency>
         <groupId>org.apache.helix</groupId>
         <artifactId>helix-core</artifactId>
         <version>${helix.version}</version>
@@ -579,88 +617,6 @@
       </dependency>
 
       <!-- Hadoop  -->
-      <dependency>
-        <groupId>org.apache.hadoop</groupId>
-        <artifactId>hadoop-common</artifactId>
-        <version>${hadoop.version}</version>
-        <exclusions>
-          <exclusion>
-            <groupId>com.sun.jersey</groupId>
-            <artifactId>jersey-server</artifactId>
-          </exclusion>
-          <exclusion>
-            <groupId>com.sun.jersey</groupId>
-            <artifactId>jersey-client</artifactId>
-          </exclusion>
-          <exclusion>
-            <groupId>com.sun.jersey</groupId>
-            <artifactId>jersey-core</artifactId>
-          </exclusion>
-          <exclusion>
-            <groupId>com.sun.jersey</groupId>
-            <artifactId>jersey-json</artifactId>
-          </exclusion>
-          <exclusion>
-            <groupId>log4j</groupId>
-            <artifactId>log4j</artifactId>
-          </exclusion>
-          <exclusion>
-            <groupId>org.slf4j</groupId>
-            <artifactId>slf4j-log4j12</artifactId>
-          </exclusion>
-        </exclusions>
-      </dependency>
-      <dependency>
-        <groupId>org.apache.hadoop</groupId>
-        <artifactId>hadoop-minicluster</artifactId>
-        <version>${hadoop.version}</version>
-        <exclusions>
-          <exclusion>
-            <groupId>log4j</groupId>
-            <artifactId>log4j</artifactId>
-          </exclusion>
-          <exclusion>
-            <groupId>org.slf4j</groupId>
-            <artifactId>slf4j-log4j12</artifactId>
-          </exclusion>
-        </exclusions>
-      </dependency>
-      <dependency>
-        <groupId>org.apache.hadoop</groupId>
-        <artifactId>hadoop-client</artifactId>
-        <version>${hadoop.version}</version>
-        <exclusions>
-          <exclusion>
-            <groupId>com.sun.jersey</groupId>
-            <artifactId>jersey-server</artifactId>
-          </exclusion>
-          <exclusion>
-            <groupId>com.sun.jersey</groupId>
-            <artifactId>jersey-client</artifactId>
-          </exclusion>
-          <exclusion>
-            <groupId>com.sun.jersey</groupId>
-            <artifactId>jersey-core</artifactId>
-          </exclusion>
-          <exclusion>
-            <groupId>com.sun.jersey</groupId>
-            <artifactId>jersey-json</artifactId>
-          </exclusion>
-          <exclusion>
-            <groupId>log4j</groupId>
-            <artifactId>log4j</artifactId>
-          </exclusion>
-          <exclusion>
-            <groupId>org.slf4j</groupId>
-            <artifactId>slf4j-log4j12</artifactId>
-          </exclusion>
-        </exclusions>
-      </dependency>
-      <dependency>
-        <groupId>org.apache.hadoop</groupId>
-        <artifactId>hadoop-aws</artifactId>
-        <version>${hadoop.version}</version>
-      </dependency>
       <dependency>
         <groupId>org.apache.orc</groupId>
         <artifactId>orc-core</artifactId>
@@ -817,6 +773,11 @@
         </exclusions>
       </dependency>
       <dependency>
+        <groupId>org.apache.calcite</groupId>
+        <artifactId>calcite-babel</artifactId>
+        <version>${calcite.version}</version>
+      </dependency>
+      <dependency>
         <groupId>com.jcabi</groupId>
         <artifactId>jcabi-log</artifactId>
         <version>0.17.1</version>
@@ -935,6 +896,12 @@
         <artifactId>commons-math3</artifactId>
         <version>3.2</version>
       </dependency>
+      <!-- hadoop-common & google-cloud-storage use gson -->
+      <dependency>
+        <groupId>com.google.code.gson</groupId>
+        <artifactId>gson</artifactId>
+        <version>2.2.4</version>
+      </dependency>
       <!-- kafka_2.10 & jmh-core use jopt-simple -->
       <dependency>
         <groupId>net.sf.jopt-simple</groupId>
@@ -951,18 +918,7 @@
         <artifactId>commons-logging</artifactId>
         <version>${commons-logging.version}</version>
       </dependency>
-      <dependency>
-        <groupId>com.typesafe</groupId>
-        <artifactId>config</artifactId>
-        <version>1.3.2</version>
-      </dependency>
-      <dependency>
-        <groupId>io.vavr</groupId>
-        <artifactId>vavr</artifactId>
-        <version>0.9.2</version>
-      </dependency>
     </dependencies>
-
   </dependencyManagement>
   <build>
     <defaultGoal>clean install</defaultGoal>
@@ -1170,8 +1126,6 @@
           <!-- Excludes integration tests when unit tests are run. -->
           <excludes>
             <exclude>**/*IT.java</exclude>
-            <!-- TODO: re-enable the Minion tests when upgrading to Helix 0.9.1 -->
-            <exclude>**/*MinionClusterIntegrationTest.java</exclude>
           </excludes>
           <forkCount>1</forkCount>
           <reuseForks>false</reuseForks>
@@ -1339,6 +1293,10 @@
             <exclude>licenses/**</exclude>
             <exclude>licenses-binary/**</exclude>
 
+            <!-- Exclude build targets -->
+            <exclude>**/target/**</exclude>
+
+
             <!-- js, css files that are exact copies of the third-party works. In this case, the original header has to
             be kept. Please refer to 'Treatment of Third-party works' in https://www.apache.org/legal/src-headers.html
             -->
@@ -1359,9 +1317,13 @@
             <exclude>**/*.csv</exclude>
             <exclude>**/*.avro</exclude>
             <exclude>**/*.conf</exclude>
+            <exclude>**/*.config</exclude>
             <exclude>**/*.yml</exclude>
             <exclude>**/*.yaml</exclude>
             <exclude>**/*.properties</exclude>
+
+            <!-- IDE files -->
+            <exclude>**/*.iml</exclude>
 
             <!-- Top level -->
             <exclude>.codecov*</exclude>

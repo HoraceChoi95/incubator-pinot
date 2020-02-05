@@ -25,6 +25,7 @@ import java.util.stream.Collectors;
 import org.apache.pinot.thirdeye.constant.AnomalyResultSource;
 import org.apache.pinot.thirdeye.datalayer.dto.DetectionAlertConfigDTO;
 import org.apache.pinot.thirdeye.datalayer.dto.MergedAnomalyResultDTO;
+import org.apache.pinot.thirdeye.detection.ConfigUtils;
 import org.apache.pinot.thirdeye.detection.spi.model.AnomalySlice;
 import org.apache.pinot.thirdeye.detection.DataProvider;
 import java.util.Collection;
@@ -60,12 +61,15 @@ public abstract class StatefulDetectionAlertFilter extends DetectionAlertFilter 
   protected final Set<MergedAnomalyResultDTO> filter(Map<Long, Long> vectorClocks, final long minId) {
     // retrieve all candidate anomalies
     Set<MergedAnomalyResultDTO> allAnomalies = new HashSet<>();
-    for (Long functionId : vectorClocks.keySet()) {
-      long startTime = vectorClocks.get(functionId);
+    for (Long detectionId : vectorClocks.keySet()) {
+      long startTime = vectorClocks.get(detectionId);
 
-      AnomalySlice slice = new AnomalySlice().withStart(startTime).withEnd(this.endTime);
+      AnomalySlice slice = new AnomalySlice()
+          .withDetectionId(detectionId)
+          .withStart(startTime)
+          .withEnd(this.endTime);
       Collection<MergedAnomalyResultDTO> candidates;
-      candidates = this.provider.fetchAnomalies(Collections.singletonList(slice), functionId).get(slice);
+      candidates = this.provider.fetchAnomalies(Collections.singletonList(slice)).get(slice);
 
       Collection<MergedAnomalyResultDTO> anomalies =
           Collections2.filter(candidates, new Predicate<MergedAnomalyResultDTO>() {
@@ -111,27 +115,26 @@ public abstract class StatefulDetectionAlertFilter extends DetectionAlertFilter 
     return filteredRecipients;
   }
 
+  /**
+   * Extracts the alert schemes from config and also merges (overrides)
+   * recipients explicitly defined outside the scope of alert schemes.
+   */
   protected Map<String, Object> generateNotificationSchemeProps(DetectionAlertConfigDTO config,
       Set<String> to, Set<String> cc, Set<String> bcc) {
     Map<String, Object> notificationSchemeProps = new HashMap<>();
 
-    if (config.getAlertSchemes() == null) {
-      Map<String, Map<String, Object>> alertSchemes = new HashMap<>();
-      alertSchemes.put(PROP_EMAIL_SCHEME, new HashMap<>());
-      config.setAlertSchemes(alertSchemes);
+    if (config.getAlertSchemes() != null) {
+      notificationSchemeProps.putAll(config.getAlertSchemes());
     }
 
-    for (Map.Entry<String, Map<String, Object>> schemeProps : config.getAlertSchemes().entrySet()) {
-      notificationSchemeProps.put(schemeProps.getKey(), new HashMap<>(schemeProps.getValue()));
-    }
-
-    if (notificationSchemeProps.get(PROP_EMAIL_SCHEME) != null) {
-      Map<String, Set<String>> recipients = new HashMap<>();
-      recipients.put(PROP_TO, cleanupRecipients(to));
-      recipients.put(PROP_CC, cleanupRecipients(cc));
-      recipients.put(PROP_BCC, cleanupRecipients(bcc));
-      ((Map<String, Object>) notificationSchemeProps.get(PROP_EMAIL_SCHEME)).put(PROP_RECIPIENTS, recipients);
-    }
+    Map<String, Object> recipients = new HashMap<>();
+    recipients.put(PROP_TO, cleanupRecipients(to));
+    recipients.put(PROP_CC, cleanupRecipients(cc));
+    recipients.put(PROP_BCC, cleanupRecipients(bcc));
+    Map<String, Object> recipientsHolder = new HashMap<>();
+    recipientsHolder.put(PROP_RECIPIENTS, recipients);
+    notificationSchemeProps.computeIfAbsent(PROP_EMAIL_SCHEME, k -> new HashMap<>());
+    ((Map<String, Object>) notificationSchemeProps.get(PROP_EMAIL_SCHEME)).putAll(recipientsHolder);
 
     return notificationSchemeProps;
   }

@@ -34,8 +34,6 @@ import org.apache.pinot.broker.routing.TimeBoundaryService.TimeBoundaryInfo;
 import org.apache.pinot.common.config.TableConfig;
 import org.apache.pinot.common.config.TableNameBuilder;
 import org.apache.pinot.common.config.TagNameUtils;
-import org.apache.pinot.common.data.FieldSpec;
-import org.apache.pinot.common.data.Schema;
 import org.apache.pinot.common.metadata.segment.OfflineSegmentZKMetadata;
 import org.apache.pinot.common.utils.CommonConstants.Broker;
 import org.apache.pinot.common.utils.CommonConstants.Helix;
@@ -43,6 +41,9 @@ import org.apache.pinot.common.utils.CommonConstants.Helix.TableType;
 import org.apache.pinot.common.utils.ZkStarter;
 import org.apache.pinot.controller.helix.ControllerTest;
 import org.apache.pinot.controller.utils.SegmentMetadataMockUtils;
+import org.apache.pinot.core.transport.ServerInstance;
+import org.apache.pinot.spi.data.FieldSpec;
+import org.apache.pinot.spi.data.Schema;
 import org.apache.pinot.util.TestUtils;
 import org.testng.annotations.AfterClass;
 import org.testng.annotations.BeforeClass;
@@ -81,7 +82,7 @@ public class HelixBrokerStarterTest extends ControllerTest {
 
     Schema schema = new Schema.SchemaBuilder().setSchemaName(RAW_TABLE_NAME)
         .addTime(TIME_COLUMN_NAME, TimeUnit.DAYS, FieldSpec.DataType.INT).build();
-    _helixResourceManager.addOrUpdateSchema(schema);
+    _helixResourceManager.addSchema(schema, true);
     TableConfig offlineTableConfig =
         new TableConfig.Builder(TableType.OFFLINE).setTableName(RAW_TABLE_NAME).setTimeColumnName(TIME_COLUMN_NAME)
             .setTimeType(TimeUnit.DAYS.name()).build();
@@ -112,7 +113,7 @@ public class HelixBrokerStarterTest extends ControllerTest {
     streamConfigs.put("stream.kafka.consumer.type", "highLevel");
     streamConfigs.put("stream.kafka.topic.name", "kafkaTopic");
     streamConfigs
-        .put("stream.kafka.decoder.class.name", "org.apache.pinot.core.realtime.impl.kafka.KafkaAvroMessageDecoder");
+        .put("stream.kafka.decoder.class.name", "org.apache.pinot.plugin.stream.kafka.KafkaAvroMessageDecoder");
     return streamConfigs;
   }
 
@@ -138,7 +139,7 @@ public class HelixBrokerStarterTest extends ControllerTest {
     assertTrue(routing.routingTableExists(REALTIME_TABLE_NAME));
 
     RoutingTableLookupRequest routingTableLookupRequest = new RoutingTableLookupRequest(OFFLINE_TABLE_NAME);
-    Map<String, List<String>> routingTable = routing.getRoutingTable(routingTableLookupRequest);
+    Map<ServerInstance, List<String>> routingTable = routing.getRoutingTable(routingTableLookupRequest);
     assertEquals(routingTable.size(), NUM_SERVERS);
     assertEquals(routingTable.values().iterator().next().size(), NUM_OFFLINE_SEGMENTS);
 

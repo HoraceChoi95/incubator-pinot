@@ -30,6 +30,7 @@ import java.io.InputStreamReader;
 import java.io.OutputStreamWriter;
 import java.net.URL;
 import java.net.URLConnection;
+import java.nio.charset.StandardCharsets;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
@@ -46,10 +47,10 @@ import org.apache.pinot.broker.broker.helix.HelixBrokerStarter;
 import org.apache.pinot.common.config.TableConfig;
 import org.apache.pinot.common.config.TableNameBuilder;
 import org.apache.pinot.common.config.Tenant;
-import org.apache.pinot.common.config.Tenant.TenantBuilder;
 import org.apache.pinot.common.segment.SegmentMetadata;
 import org.apache.pinot.common.utils.CommonConstants;
-import org.apache.pinot.common.utils.JsonUtils;
+import org.apache.pinot.spi.plugin.PluginManager;
+import org.apache.pinot.spi.utils.JsonUtils;
 import org.apache.pinot.common.utils.TenantRole;
 import org.apache.pinot.controller.ControllerConf;
 import org.apache.pinot.controller.ControllerStarter;
@@ -237,7 +238,7 @@ public class PerfBenchmarkDriver {
     if (_segmentFormatVersion != null) {
       serverConfiguration.setProperty(CommonConstants.Server.CONFIG_OF_SEGMENT_FORMAT_VERSION, _segmentFormatVersion);
     }
-    serverConfiguration.setProperty(CommonConstants.Helix.Instance.INSTANCE_ID_KEY, _serverInstanceName);
+    serverConfiguration.setProperty(CommonConstants.Server.CONFIG_OF_INSTANCE_ID, _serverInstanceName);
     LOGGER.info("Starting server instance: {}", _serverInstanceName);
     new HelixServerStarter(_clusterName, _zkAddress, serverConfiguration);
   }
@@ -260,16 +261,13 @@ public class PerfBenchmarkDriver {
 
     // Create server tenants if required
     if (_conf.shouldStartServer()) {
-      Tenant serverTenant =
-          new TenantBuilder(_serverTenantName).setRole(TenantRole.SERVER).setTotalInstances(1).setOfflineInstances(1)
-              .build();
+      Tenant serverTenant = new Tenant(TenantRole.SERVER, _serverTenantName, 1, 1, 0);
       _helixResourceManager.createServerTenant(serverTenant);
     }
 
     // Create broker tenant if required
     if (_conf.shouldStartBroker()) {
-      Tenant brokerTenant =
-          new TenantBuilder(_brokerTenantName).setRole(TenantRole.BROKER).setTotalInstances(1).build();
+      Tenant brokerTenant = new Tenant(TenantRole.BROKER, _brokerTenantName, 1, 0, 0);
       _helixResourceManager.createBrokerTenant(brokerTenant);
     }
   }
@@ -392,13 +390,15 @@ public class PerfBenchmarkDriver {
     URLConnection conn = new URL(_brokerBaseApiUrl + "/query").openConnection();
     conn.setDoOutput(true);
 
-    try (BufferedWriter writer = new BufferedWriter(new OutputStreamWriter(conn.getOutputStream(), "UTF-8"))) {
+    try (BufferedWriter writer = new BufferedWriter(new OutputStreamWriter(conn.getOutputStream(),
+        StandardCharsets.UTF_8))) {
       String requestString = requestJson.toString();
       writer.write(requestString);
       writer.flush();
 
       StringBuilder stringBuilder = new StringBuilder();
-      try (BufferedReader reader = new BufferedReader(new InputStreamReader(conn.getInputStream(), "UTF-8"))) {
+      try (BufferedReader reader = new BufferedReader(new InputStreamReader(conn.getInputStream(),
+          StandardCharsets.UTF_8))) {
         String line;
         while ((line = reader.readLine()) != null) {
           stringBuilder.append(line);
@@ -444,6 +444,7 @@ public class PerfBenchmarkDriver {
 
   public static void main(String[] args)
       throws Exception {
+    PluginManager.get().init();
     PerfBenchmarkDriverConf conf = (PerfBenchmarkDriverConf) new Yaml().load(new FileInputStream(args[0]));
     PerfBenchmarkDriver perfBenchmarkDriver = new PerfBenchmarkDriver(conf);
     perfBenchmarkDriver.run();

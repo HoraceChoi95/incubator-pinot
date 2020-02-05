@@ -25,7 +25,6 @@ import io.swagger.annotations.Api;
 import io.swagger.annotations.ApiOperation;
 import io.swagger.annotations.ApiParam;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.HashMap;
@@ -56,7 +55,6 @@ import org.apache.pinot.thirdeye.datalayer.dto.DetectionAlertConfigDTO;
 import org.apache.pinot.thirdeye.datalayer.dto.DetectionConfigDTO;
 import org.apache.pinot.thirdeye.datalayer.dto.MergedAnomalyResultDTO;
 import org.apache.pinot.thirdeye.datalayer.util.Predicate;
-import org.apache.pinot.thirdeye.rootcause.impl.MetricEntity;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -97,16 +95,31 @@ public class UserDashboardResource {
     }
     Preconditions.checkNotNull(start, "Please specify the start time of the anomaly retrieval window");
 
-    // TODO: Prefer to have intersection of anomalies rather than union
-    List<MergedAnomalyResultDTO> anomalies = new ArrayList<>();
-    // Fetch anomalies by group
-    anomalies.addAll(fetchAnomaliesBySubsGroup(start, end, group));
-    // Fetch anomalies by application
-    anomalies.addAll(fetchAnomaliesByApplication(start, end, application));
-    // Fetch anomalies by metric and/or dataset
-    anomalies.addAll(fetchAnomaliesByMetricDataset(start, end, metric, dataset));
-    // Fetch anomalies by metric dataset pairs
-    anomalies.addAll(fetchAnomaliesByMetricDatasetPairs(start, end, metricDatasetPairs));
+    List<Set<MergedAnomalyResultDTO>> anomalySets = new ArrayList<>();
+    if (group != null) {
+      // Fetch anomalies by group
+      anomalySets.add(new HashSet<>(fetchAnomaliesBySubsGroup(start, end, group)));
+    }
+    if (application != null) {
+      // Fetch anomalies by application
+      anomalySets.add(new HashSet<>(fetchAnomaliesByApplication(start, end, application)));
+    }
+    if (metric != null || dataset != null) {
+      // Fetch anomalies by metric and/or dataset
+      anomalySets.add(new HashSet<>(fetchAnomaliesByMetricDataset(start, end, metric, dataset)));
+    }
+    if (metricDatasetPairs != null && !metricDatasetPairs.isEmpty()) {
+      // Fetch anomalies by metric dataset pairs
+      anomalySets.add(new HashSet<>(fetchAnomaliesByMetricDatasetPairs(start, end, metricDatasetPairs)));
+    }
+    if (anomalySets.isEmpty()) {
+      return getAnomalyFormattedOutput(new ArrayList<>());
+    }
+    // calculate intersection of all non-empty results
+    for (int i = 1; i < anomalySets.size(); i++) {
+      anomalySets.get(0).retainAll(anomalySets.get(i));
+    }
+    List<MergedAnomalyResultDTO> anomalies = new ArrayList<>(anomalySets.get(0));
 
     // sort descending by start time
     Collections.sort(anomalies, (o1, o2) -> -1 * Long.compare(o1.getStartTime(), o2.getStartTime()));
@@ -236,8 +249,15 @@ public class UserDashboardResource {
       if (anomaly.getDetectionConfigId() != null) {
         long detectionConfigId = anomaly.getDetectionConfigId();
         DetectionConfigDTO detectionDTO = this.detectionDAO.findById(detectionConfigId);
-        summary.setFunctionName(detectionDTO.getName());
-        summary.setDetectionConfigId(detectionConfigId);
+        if (detectionDTO != null) {
+          summary.setFunctionName(detectionDTO.getName());
+          summary.setDetectionConfigId(detectionConfigId);
+        } else {
+          // this can happen when legacy anomalies are retrieved
+          LOG.error("Cannot find detectionConfig with id {}, so skipping the anomaly {}...",
+              detectionConfigId, anomaly.getId());
+          continue;
+        }
       }
 
       summary.setMetricName(anomaly.getMetric());
